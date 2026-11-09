@@ -1,0 +1,25 @@
+@echo off
+title Codexen MCP Engine (8788)
+cd /d "%~dp0"
+
+set "PY_EXE="
+if exist "%~dp0.venv\Scripts\python.exe" (
+    "%~dp0.venv\Scripts\python.exe" -c "import starlette" >nul 2>nul
+    if not errorlevel 1 set "PY_EXE=%~dp0.venv\Scripts\python.exe"
+)
+if "%PY_EXE%"=="" if exist "C:\Users\%USERNAME%\Miniconda3\python.exe" (
+    set "PY_EXE=C:\Users\%USERNAME%\Miniconda3\python.exe"
+    set "PATH=C:\Users\%USERNAME%\Miniconda3;C:\Users\%USERNAME%\Miniconda3\Scripts;C:\Users\%USERNAME%\Miniconda3\Library\bin;%PATH%"
+) else if "%PY_EXE%"=="" (
+    where python >nul 2>nul
+    if %errorlevel% equ 0 set "PY_EXE=python"
+)
+
+if "%PY_EXE%"=="" (
+    echo [ERROR] Python environment not found! Please install Python or Miniconda.
+    pause
+    exit /b 1
+)
+
+"%PY_EXE%" launcher.py %*
+if errorlevel 1 pause

@@ -1,0 +1,108 @@
+# ==============================================================================
+# Codexen 开发项目配置文件 (Projects Configuration)
+#
+# 本文件专门用于配置允许云端 AI Agent 开发和访问的本地目标项目。
+# 服务自身运行时配置（如监听端口、隧道 Token、安全访问密钥）均由 .env 自动管理。
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. 统一工程工作区根目录
+# 外部 Agent 通过 create_project 新建的项目将统一存放在此目录下并自动映射
+# ------------------------------------------------------------------------------
+workspace:
+  root: "D:\\works"
+  allow_create_project: true
+
+# ------------------------------------------------------------------------------
+# 2. 项目名称与本机真实物理根目录映射
+# 外部 Agent 通过 project_id / project_name 访问，无需暴露真实绝对路径
+# ------------------------------------------------------------------------------
+projects:
+  literary_workflow_v1:
+    root: "D:\\works\\literary_workflow_v1"
+    description: "示例开发工程代码库 (V1 原始基线)"
+    read_only: false
+  literary-workflow:
+    root: "D:\\works\\literary-workflow"
+    description: "示例开发工程代码库 (架构重构版)"
+    read_only: false
+
+# ------------------------------------------------------------------------------
+# 3. 远程 Agent 开发操作权限与命令控制 (可选)
+# ------------------------------------------------------------------------------
+permissions:
+  allow_file_read: true       # 允许远程 Agent 读取文件
+  allow_file_write: true      # 允许远程 Agent 写入与创建文件
+  allow_file_delete: true     # 允许远程 Agent 删除文件
+  allow_copy_path: true       # 允许项目内与跨项目文件/目录复制
+  allow_zip_operations: true  # 允许 ZIP 打包与解压
+  allow_command_execution: true # 允许受控终端命令执行
+  max_read_chars: 1000000     # 单次读文件最大字符限制 (防大文件内存溢出)
+  max_list_entries: 1000      # 遍历目录最大条目数
+  max_search_results: 200     # 代码检索单次最多返回匹配数
+  max_zip_size_bytes: 104857600 # 最大允许解压/打包 ZIP 大小 (100MB)
+  command_timeout_seconds: 60 # 命令执行默认硬超时时间 (秒)
+  max_command_timeout_seconds: 300 # 允许设定的最大执行超时 (秒)
+  max_command_output_chars: 50000  # 输出内容截断上限 (字符数，现代 Agent 最佳截断标准)
+  default_encoding: "utf-8"
+
+  # 常用开发套件白名单（允许直接执行）
+  command_whitelist:
+  - "git"
+  - "pytest"
+  - "npm"
+  - "pnpm"
+  - "yarn"
+  - "cargo"
+  - "rustc"
+  - "go"
+  - "make"
+  - "ruff"
+  - "flake8"
+  - "tsc"
+  - "pip"
+  - "poetry"
+  - "uv"
+  - "dir"
+  - "echo"
+  - "type"
+  - "cat"
+  - "findstr"
+  - "grep"
+
+  # 高危破坏性指令硬黑名单（绝对禁止执行，即使确认也阻断）
+  command_blacklist:
+  - "format"
+  - "diskpart"
+  - "mklink"
+  - "reg"
+  - "regedit"
+  - "shutdown"
+  - "bcdedit"
+  - "vssadmin"
+  - "cipher"
+  - "takeown"
+
+  # 敏感指令列表（执行前需 Agent 询问用户，用户同意并传入 confirmed=True 后方可执行）
+  command_require_confirmation:
+  - "python"
+  - "py"
+  - "node"
+  - "rmdir"
+  - "del"
+  - "rm"
+  - "git push"
+  - "git reset --hard"
+  - "git clean"
+  - "npm publish"
+  - "pip install --upgrade"
+
+  ignored_patterns:
+  - ".git"
+  - ".svn"
+  - "__pycache__"
+  - ".venv"
+  - "node_modules"
+  - ".idea"
+  - ".vscode"
+  - "*.pyc"

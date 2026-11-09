@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codexen"
+version = "0.2.0"
+description = "Secure MCP Bridge Engine for Remote AI Agents and Local Development"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "mcp>=1.2.0,<2",
+    "PyYAML>=6.0.1",
+    "ruamel.yaml>=0.18.0",
+    "python-dotenv>=1.0.1",
+    "starlette>=0.36.0",
+    "uvicorn>=0.27.0",
+    "pystray>=0.19.5",
+    "pywin32>=306; platform_system=='Windows'",
+    "pillow>=10.0.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "httpx>=0.27.0",
+]
+
+[project.scripts]
+codexen = "app.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "mcp_framework*"]
+
