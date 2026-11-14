@@ -28,9 +28,9 @@ test = [
 ]
 
 [project.scripts]
-codexen = "app.__main__:main"
+codexen = "codexen.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["app*"]
+include = ["codexen*"]
 

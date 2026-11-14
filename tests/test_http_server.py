@@ -13,12 +13,12 @@ import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
-from app.config import ConfigManager
-from app.server import (
+from codexen.config import ConfigManager
+from codexen.server import (
     build_starlette_app,
     create_http_server,
 )
-from app.oauth import base64url_encode
+from codexen.oauth import base64url_encode
 
 
 class HTTPServerIntegrationTests(unittest.TestCase):

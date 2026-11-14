@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import unittest
-from app import server
+from codexen import server
 
 
 class ServerModuleTests(unittest.TestCase):

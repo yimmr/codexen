@@ -17,19 +17,19 @@ except ImportError:
     from mcp.server.mcpserver import MCPServer as FastMCP
     Image = None
 
-from app.config import ConfigManager, ProjectConfig
-from app.core import (
+from codexen.config import ConfigManager, ProjectConfig
+from codexen.core import (
     ProcessSessionManager,
     global_process_manager,
     read_project_binary_file,
     write_project_binary_file,
 )
-from app.exceptions import (
+from codexen.exceptions import (
     CommandSecurityError,
     PathSecurityError,
     ReadOnlyProjectError,
 )
-from app.tools import ToolResultListDict, register_file_tools
+from codexen.tools import ToolResultListDict, register_file_tools
 from mcp_server_core.tunnel import (
     TunnelHeartbeatMonitor,
     check_tunnel_health,

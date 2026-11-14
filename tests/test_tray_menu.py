@@ -14,7 +14,7 @@ except ImportError:
     pystray = None  # type: ignore
     item = None  # type: ignore
 
-from app.config import ConfigManager
+from codexen.config import ConfigManager
 
 
 @unittest.skipIf(pystray is None, "pystray is required for tray menu tests")

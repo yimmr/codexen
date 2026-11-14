@@ -8,8 +8,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from .config import ConfigManager
-from .core import (
+from ..config import ConfigManager
+from ..core import (
     copy_project_path,
     create_project_directory,
     create_project_zip,
@@ -1155,7 +1155,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         """
         proj = _resolve_project(project_id=project_id, project_name=project_name)
         target_path = normalize_relative_path(relative_path or path)
-        from .core.security import assert_not_sensitive_path, ensure_project_accessible, safe_resolve_path
+        from ..core.security import assert_not_sensitive_path, ensure_project_accessible, safe_resolve_path
         assert_not_sensitive_path(target_path, "Reading media")
         ensure_project_accessible(proj)
         file_path = safe_resolve_path(proj.root, target_path)

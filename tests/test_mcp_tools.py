@@ -6,9 +6,9 @@ import unittest
 from pathlib import Path
 import yaml
 
-from app.config import ConfigManager
-from app.tools import register_file_tools
-from app.exceptions import PathSecurityError, CommandSecurityError
+from codexen.config import ConfigManager
+from codexen.tools import register_file_tools
+from codexen.exceptions import PathSecurityError, CommandSecurityError
 
 try:
     from mcp.server.fastmcp import FastMCP

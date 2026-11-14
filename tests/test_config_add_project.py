@@ -6,8 +6,8 @@ import shutil
 import tempfile
 import unittest
 
-from app.config import ConfigManager
-from app.exceptions import ConfigurationError
+from codexen.config import ConfigManager
+from codexen.exceptions import ConfigurationError
 
 
 class TestConfigAddProject(unittest.TestCase):

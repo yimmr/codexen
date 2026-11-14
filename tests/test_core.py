@@ -5,8 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.config import ProjectConfig
-from app.core import (
+from codexen.config import ProjectConfig
+from codexen.core import (
     create_project_directory,
     delete_project_file,
     edit_project_file_snippet,
@@ -16,7 +16,7 @@ from app.core import (
     safe_resolve_path,
     write_project_file,
 )
-from app.exceptions import (
+from codexen.exceptions import (
     FileSizeLimitError,
     PathSecurityError,
     ReadOnlyProjectError,

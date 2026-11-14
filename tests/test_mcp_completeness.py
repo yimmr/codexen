@@ -8,9 +8,9 @@ import unittest
 from pathlib import Path
 import yaml
 
-from app.config import ConfigManager, ProjectConfig
-from app.tools import register_file_tools
-from app.core import (
+from codexen.config import ConfigManager, ProjectConfig
+from codexen.tools import register_file_tools
+from codexen.core import (
     is_sensitive_path,
     normalize_relative_path,
     list_project_files,
@@ -18,7 +18,7 @@ from app.core import (
     read_multiple_project_files,
     get_project_git_log,
 )
-from app.exceptions import PathSecurityError, ConfigurationError
+from codexen.exceptions import PathSecurityError, ConfigurationError
 
 try:
     from mcp.server.fastmcp import FastMCP

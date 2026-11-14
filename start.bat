@@ -21,5 +21,5 @@ if "%PY_EXE%"=="" (
     exit /b 1
 )
 
-"%PY_EXE%" launcher.py %*
+"%PY_EXE%" -m codexen.launcher %*
 if errorlevel 1 pause

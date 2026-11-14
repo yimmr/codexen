@@ -1,4 +1,4 @@
-"""Tests ensuring strict architectural decoupling between generic mcp_server_core and app."""
+"""Tests ensuring strict architectural decoupling between generic mcp_server_core and codexen."""
 from __future__ import annotations
 
 import sys
@@ -54,7 +54,7 @@ class FrameworkDecouplingTests(unittest.TestCase):
             self.assertTrue(hasattr(mcp_server_core, symbol), f"mcp_server_core missing symbol {symbol}")
 
     def test_framework_pure_instantiation(self):
-        """Verify mcp_server_core can power an arbitrary dummy MCP service without app."""
+        """Verify mcp_server_core can power an arbitrary dummy MCP service without codexen."""
         dummy_mcp = FastMCP("DummyService")
 
         @dummy_mcp.tool()
@@ -104,7 +104,7 @@ class FrameworkDecouplingTests(unittest.TestCase):
 
     def test_yaml_roundtrip_comment_preservation(self):
         """Verify _persist_project_to_yaml preserves existing comments with ruamel.yaml."""
-        from app.config import ConfigManager, ProjectConfig
+        from codexen.config import ConfigManager, ProjectConfig
 
         config_file = self.temp_dir / "config.yaml"
         config_file.write_text(

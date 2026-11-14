@@ -1,7 +1,7 @@
 """Codexen MCP Service entrypoint.
 
 Executable directly via:
-    python -m app
+    python -m codexen
     codexen (after pip install -e .)
 """
 from __future__ import annotations
@@ -15,7 +15,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from app.server import config_manager, mcp
+from .server import config_manager, mcp
 from mcp_server_core.server import run_mcp_server
 
 

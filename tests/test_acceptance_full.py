@@ -21,13 +21,13 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch
 
-from app.config import ConfigManager, ProjectConfig
-from app.core import (
+from codexen.config import ConfigManager, ProjectConfig
+from codexen.core import (
     global_process_manager,
     read_project_binary_file,
     write_project_binary_file,
 )
-from app.server import (
+from codexen.server import (
     create_directory,
     delete_directory,
     delete_file,
@@ -56,7 +56,7 @@ from app.server import (
     write_file,
     write_project_file,
 )
-from app.tools import ToolResultListDict
+from codexen.tools import ToolResultListDict
 from mcp_server_core.tunnel import (
     TunnelHeartbeatMonitor,
     check_tunnel_health,

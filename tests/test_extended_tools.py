@@ -7,8 +7,8 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from app.config import ConfigManager, ProjectConfig
-from app.core import (
+from codexen.config import ConfigManager, ProjectConfig
+from codexen.core import (
     copy_project_path,
     create_project_zip,
     extract_project_zip,
@@ -16,7 +16,7 @@ from app.core import (
     search_project_code,
     truncate_command_output,
 )
-from app.exceptions import (
+from codexen.exceptions import (
     CommandSecurityError,
     PathSecurityError,
     ZipSlipSecurityError,

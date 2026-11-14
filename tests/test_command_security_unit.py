@@ -1,12 +1,12 @@
 """Unit tests for terminal command security inspection and executable parsing."""
 import unittest
-from app.config import ServiceSettings
-from app.core.command import (
+from codexen.config import ServiceSettings
+from codexen.core.command import (
     check_command_security,
     extract_command_executable,
     is_safe_test_command,
 )
-from app.exceptions import CommandSecurityError
+from codexen.exceptions import CommandSecurityError
 
 
 class CommandSecurityUnitTests(unittest.TestCase):

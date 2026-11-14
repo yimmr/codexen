@@ -20,5 +20,5 @@ if "%PY_EXE%"=="" (
     exit /b 1
 )
 
-"%PY_EXE%" launcher.py --stop
+"%PY_EXE%" -m codexen.launcher --stop
 ping 127.0.0.1 -n 2 >nul

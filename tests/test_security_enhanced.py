@@ -20,22 +20,22 @@ import yaml
 
 import httpx
 
-from app.config import (
+from codexen.config import (
     ConfigManager,
     ProjectConfig,
     get_runtime_dir,
     update_env_variable,
 )
-from app.core import (
+from codexen.core import (
     delete_project_file,
     list_project_files,
     read_project_file,
     write_project_file,
 )
-from app.exceptions import ConfigurationError, PathSecurityError
-from app.server import build_starlette_app, create_http_server
-from app.tools import register_file_tools
-from app.oauth import (
+from codexen.exceptions import ConfigurationError, PathSecurityError
+from codexen.server import build_starlette_app, create_http_server
+from codexen.tools import register_file_tools
+from codexen.oauth import (
     AuthRateLimiter,
     LocalOAuthServer,
     base64url_encode,
@@ -308,7 +308,7 @@ class SecurityEnhancedTests(unittest.TestCase):
 
     def test_codexen_engine_isolation(self):
         """Verify that Codexen's own engine directory is NEVER permitted to be exposed as a project."""
-        from app.core import safe_resolve_path
+        from codexen.core import safe_resolve_path
 
         # 1. Project root pointing to Codexen base_dir is blocked
         cfg_bad_proj = self.base_dir / "config" / "bad_proj.yaml"
