@@ -1,0 +1,50 @@
+# Python & Environment
+.env
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+
+# Local Project Configuration (Use config.example.yaml as template)
+config.yaml
+
+# Runtime & Process artifacts (Centralized in .runtime/)
+.runtime/
+.codexen/
+*.pid
+.server.pid
+.tray.pid
+*.log
+cf_http2.log
+cf_test.log
+server_error.log
+tray_debug.log
+
+# Temporary tunnel & config exports
+ACTIVE_TUNNEL_URL.txt
+CHATGPT_CONFIG.txt
+
+# Local SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+oauth_store.db
+
+# IDE & Editor artifacts
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+Thumbs.db
+
+# Binary tools & external downloads
+bin/
+
+# Lockfiles & test cache
+uv.lock
+.pytest_cache/
+

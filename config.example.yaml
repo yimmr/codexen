@@ -1,0 +1,108 @@
+# ==============================================================================
+# Codexen 开发项目配置文件模板 (Projects Configuration Example)
+#
+# 使用方式:
+#   复制本文件为 config.yaml:
+#     cp config.example.yaml config.yaml
+#
+# 安全提示:
+#   config.yaml 已被 .gitignore 忽略，您在本地挂载的任何真实工程路径均绝不会被 Git 提交泄露。
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. 统一工程工作区根目录
+# 外部 Agent 通过 create_project 新建的项目将统一存放在此目录下并自动映射
+# ------------------------------------------------------------------------------
+workspace:
+  root: "D:\\works"
+  allow_create_project: true
+
+# ------------------------------------------------------------------------------
+# 2. 项目名称与本机真实物理根目录映射
+# 外部 Agent 通过 project_id / project_name 访问，无需暴露真实绝对路径
+# ------------------------------------------------------------------------------
+projects:
+  example:
+    root: "D:\\works\\example"
+    description: "示例开发工程代码库"
+    read_only: false
+
+# ------------------------------------------------------------------------------
+# 3. 远程 Agent 开发操作权限与命令控制 (可选)
+# ------------------------------------------------------------------------------
+permissions:
+  allow_file_read: true       # 允许远程 Agent 读取文件
+  allow_file_write: true      # 允许远程 Agent 写入与创建文件
+  allow_file_delete: true     # 允许远程 Agent 删除文件
+  allow_copy_path: true       # 允许项目内与跨项目文件/目录复制
+  allow_zip_operations: true  # 允许 ZIP 打包与解压
+  allow_command_execution: true # 允许受控终端命令执行
+  max_read_chars: 1000000     # 单次读文件最大字符限制 (防大文件内存溢出)
+  max_list_entries: 1000      # 遍历目录最大条目数
+  max_search_results: 200     # 代码检索单次最多返回匹配数
+  max_zip_size_bytes: 104857600 # 最大允许解压/打包 ZIP 大小 (100MB)
+  command_timeout_seconds: 60 # 命令执行默认硬超时时间 (秒)
+  max_command_timeout_seconds: 300 # 允许设定的最大执行超时 (秒)
+  max_command_output_chars: 50000  # 输出内容截断上限 (字符数，现代 Agent 最佳截断标准)
+  default_encoding: "utf-8"
+
+  # 常用开发套件白名单（允许直接执行）
+  command_whitelist:
+  - "git"
+  - "pytest"
+  - "python"
+  - "py"
+  - "node"
+  - "npm"
+  - "pnpm"
+  - "yarn"
+  - "cargo"
+  - "rustc"
+  - "go"
+  - "make"
+  - "ruff"
+  - "flake8"
+  - "tsc"
+  - "pip"
+  - "poetry"
+  - "uv"
+  - "dir"
+  - "echo"
+  - "type"
+  - "cat"
+  - "findstr"
+  - "grep"
+
+  # 高危破坏性指令硬黑名单（绝对禁止执行，即使确认也阻断）
+  command_blacklist:
+  - "format"
+  - "diskpart"
+  - "mklink"
+  - "reg"
+  - "regedit"
+  - "shutdown"
+  - "bcdedit"
+  - "vssadmin"
+  - "cipher"
+  - "takeown"
+
+  # 敏感指令列表（执行前需 Agent 询问用户，用户同意并传入 confirmed=True 后方可执行）
+  command_require_confirmation:
+  - "rmdir"
+  - "del"
+  - "rm"
+  - "git push"
+  - "git reset --hard"
+  - "git clean"
+  - "npm publish"
+  - "pip install --upgrade"
+
+  ignored_patterns:
+  - ".git"
+  - ".svn"
+  - "__pycache__"
+  - ".venv"
+  - "node_modules"
+  - ".idea"
+  - ".vscode"
+  - "*.pyc"
