@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 import yaml
 
-from mcp_framework.env import (
+from mcp_server_core.env import (
     DeploymentEnvConfig,
     get_runtime_dir,
     update_env_variable,

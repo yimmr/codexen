@@ -1,7 +1,7 @@
 """Codexen MCP Server definition and tool bindings.
 
 Declares the business FastMCP instance and maps all file, project, and CLI tools.
-Lifecycle execution is delegated to the generic mcp_framework.
+Lifecycle execution is delegated to the generic mcp_server_core.
 """
 from __future__ import annotations
 
@@ -17,9 +17,9 @@ except (ImportError, ModuleNotFoundError):
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 
-from mcp_framework.env import get_runtime_dir
-from mcp_framework.oauth import LocalOAuthServer
-from mcp_framework.server import (
+from mcp_server_core.env import get_runtime_dir
+from mcp_server_core.oauth import LocalOAuthServer
+from mcp_server_core.server import (
     build_mcp_server_app,
     serve_http as framework_serve_http,
     serve_stdio as framework_serve_stdio,

@@ -30,7 +30,7 @@ from app.exceptions import (
     ReadOnlyProjectError,
 )
 from app.tools import ToolResultListDict, register_file_tools
-from mcp_framework.tunnel import (
+from mcp_server_core.tunnel import (
     TunnelHeartbeatMonitor,
     check_tunnel_health,
     restart_tunnel,
@@ -327,8 +327,8 @@ mcp:
         )
 
         # Simulate probe returning failure
-        with patch("mcp_framework.tunnel.check_tunnel_health", return_value=False):
-            with patch("mcp_framework.tunnel.restart_tunnel", return_value=True):
+        with patch("mcp_server_core.tunnel.check_tunnel_health", return_value=False):
+            with patch("mcp_server_core.tunnel.restart_tunnel", return_value=True):
                 # 1st failure
                 res1 = monitor.probe_now()
                 self.assertFalse(res1)

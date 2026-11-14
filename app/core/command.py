@@ -81,6 +81,60 @@ def kill_process_tree(pid: int) -> None:
             pass
 
 
+def extract_command_executable(command_str: str) -> tuple[str, str]:
+    """Extract full initial executable path and base binary name from a command line.
+
+    Handles quotes, relative paths, Windows and POSIX path separators.
+
+    Returns:
+        (clean_token, base_name)
+        e.g. (".venv/scripts/python", "python")
+             ("python", "python")
+             ("git", "git")
+    """
+    cmd = command_str.strip()
+    if not cmd:
+        return "", ""
+
+    # Strip optional shell invocation prefix (e.g. PowerShell '& ')
+    cmd = re.sub(r"^&\s+", "", cmd)
+
+    # Extract the first token respecting quotes
+    if cmd.startswith(('"', "'")):
+        quote_char = cmd[0]
+        end_idx = cmd.find(quote_char, 1)
+        token = cmd[1:end_idx] if end_idx != -1 else cmd[1:]
+    else:
+        # Split by first whitespace or shell separator
+        match = re.split(r"[\s;|&]+", cmd, maxsplit=1)
+        token = match[0] if match else ""
+
+    token = token.strip().replace("\\", "/")
+    token_lower = token.lower()
+
+    # Remove .exe extension if present
+    clean_token = token_lower.removesuffix(".exe")
+    # Base binary name without leading path and extension
+    base_name = Path(clean_token).name
+    return clean_token, base_name
+
+
+def is_safe_test_command(command: str) -> bool:
+    """Identify standard offline test runner commands that can safely run without extra prompts."""
+    cmd_lower = command.lower().strip()
+    normalized = cmd_lower.replace("\\", "/")
+    # Python unittest / pytest module invocation (e.g. python -m unittest, .venv/scripts/python -m unittest)
+    if re.search(r"(?:^|[\s;|&/])(?:python\d*|py)(?:\.exe)?[\"']?\s+-m\s+(?:unittest|pytest|test)\b", normalized):
+        return True
+    # Direct pytest invocation
+    if re.search(r"(?:^|[\s;|&/])pytest(?:\.exe)?\b", normalized):
+        return True
+    # Node / Cargo / Go test suites
+    if re.search(r"(?:^|[\s;|&])(?:npm|pnpm|yarn|cargo|go)\s+test\b", normalized):
+        return True
+    return False
+
+
 def check_command_security(
     command: str,
     settings: ServiceSettings,
@@ -109,9 +163,20 @@ def check_command_security(
         )
 
     # 3. Confirmation required actions (e.g. git push, npm publish, del, rmdir)
+    safe_test = is_safe_test_command(command)
+
     for req_item in settings.command_require_confirmation:
         item = req_item.lower().strip()
-        if item in cmd_lower:
+        if not item:
+            continue
+
+        # If this is an offline test runner, bypass generic interpreter confirmation prompts
+        if item in ("python", "py", "node") and safe_test:
+            continue
+
+        # Use token boundary pattern to avoid substring false positives (e.g. "py" in "pytest", "rm" in "format")
+        pattern = r"(?:^|[\s;|&])" + re.escape(item) + r"(?:[\s;|&]|$)"
+        if re.search(pattern, cmd_lower):
             if not confirmed:
                 return (
                     "needs_confirmation",
@@ -119,15 +184,21 @@ def check_command_security(
                     f"Please prompt the user for explicit confirmation before proceeding.",
                 )
 
-    # 4. Whitelist check for primary executable
-    first_token = re.split(r"[\s;|&]+", cmd_lower)[0].replace(".exe", "")
-    whitelist_clean = [w.lower().replace(".exe", "") for w in settings.command_whitelist]
+    # 4. Whitelist check for primary executable (handles paths like .venv/Scripts/python.exe)
+    clean_token, base_name = extract_command_executable(command)
+    whitelist_clean = {w.lower().removesuffix(".exe") for w in settings.command_whitelist}
 
-    if first_token not in whitelist_clean:
+    is_whitelisted = (
+        base_name in whitelist_clean
+        or clean_token in whitelist_clean
+        or (safe_test and base_name in ("python", "py", "pytest", "node", "npm", "pnpm", "yarn", "cargo", "go"))
+    )
+
+    if not is_whitelisted:
         if not confirmed:
             return (
                 "needs_confirmation",
-                f"Executable '{first_token}' is not in the default development whitelist. "
+                f"Executable '{base_name or clean_token}' is not in the default development whitelist. "
                 f"Please ask user for authorization to execute this command.",
             )
 

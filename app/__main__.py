@@ -16,7 +16,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from app.server import config_manager, mcp
-from mcp_framework.server import run_mcp_server
+from mcp_server_core.server import run_mcp_server
 
 
 def build_root_info(request: Any) -> dict[str, Any]:

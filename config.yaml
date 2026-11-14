@@ -26,6 +26,18 @@ projects:
     root: "D:\\works\\literary-workflow"
     description: "示例开发工程代码库 (架构重构版)"
     read_only: false
+  novel:
+    root: "D:\\works\\novel"
+    description: "本地开发项目 novel"
+    read_only: false
+  literary:
+    root: "D:\\works\\literary"
+    description: "本地开发项目 literary"
+    read_only: false
+  live:
+    root: "D:\\works\\live"
+    description: "本地开发项目 live"
+    read_only: false
 
 # ------------------------------------------------------------------------------
 # 3. 远程 Agent 开发操作权限与命令控制 (可选)
@@ -50,6 +62,9 @@ permissions:
   command_whitelist:
   - "git"
   - "pytest"
+  - "python"
+  - "py"
+  - "node"
   - "npm"
   - "pnpm"
   - "yarn"
@@ -85,9 +100,6 @@ permissions:
 
   # 敏感指令列表（执行前需 Agent 询问用户，用户同意并传入 confirmed=True 后方可执行）
   command_require_confirmation:
-  - "python"
-  - "py"
-  - "node"
   - "rmdir"
   - "del"
   - "rm"

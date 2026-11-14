@@ -1,10 +1,10 @@
 """OAuth 2.1 & RFC 9728 adapter for project_file_mcp.
 
-Re-exports generic OAuth and Protected Resource implementation from mcp_framework.oauth.
+Re-exports generic OAuth and Protected Resource implementation from mcp_server_core.oauth.
 """
 from __future__ import annotations
 
-from mcp_framework.oauth import (
+from mcp_server_core.oauth import (
     AuthRateLimiter,
     LocalOAuthServer,
     base64url_encode,

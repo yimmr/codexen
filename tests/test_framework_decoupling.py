@@ -1,4 +1,4 @@
-"""Tests ensuring strict architectural decoupling between generic mcp_framework and app."""
+"""Tests ensuring strict architectural decoupling between generic mcp_server_core and app."""
 from __future__ import annotations
 
 import sys
@@ -11,12 +11,12 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-import mcp_framework
-from mcp_framework.env import DeploymentEnvConfig, get_runtime_dir, update_env_variable
-from mcp_framework.oauth import LocalOAuthServer, AuthRateLimiter, base64url_encode, verify_pkce
-from mcp_framework.tunnel import CloudflareTunnel, is_cloudflared_available, is_port_listening
-from mcp_framework.http_server import create_mcp_asgi_app, mount_mcp_oauth_routes, get_local_ip
-from mcp_framework.process import is_pid_alive, is_port_in_use, check_service_status, find_pid_by_port
+import mcp_server_core
+from mcp_server_core.env import DeploymentEnvConfig, get_runtime_dir, update_env_variable
+from mcp_server_core.oauth import LocalOAuthServer, AuthRateLimiter, base64url_encode, verify_pkce
+from mcp_server_core.tunnel import CloudflareTunnel, is_cloudflared_available, is_port_listening
+from mcp_server_core.http_server import create_mcp_asgi_app, mount_mcp_oauth_routes, get_local_ip
+from mcp_server_core.process import is_pid_alive, is_port_in_use, check_service_status, find_pid_by_port
 
 try:
     from mcp.server.fastmcp import FastMCP
@@ -51,10 +51,10 @@ class FrameworkDecouplingTests(unittest.TestCase):
             "stop_tunnel_if_no_mcp",
         ]
         for symbol in expected:
-            self.assertTrue(hasattr(mcp_framework, symbol), f"mcp_framework missing symbol {symbol}")
+            self.assertTrue(hasattr(mcp_server_core, symbol), f"mcp_server_core missing symbol {symbol}")
 
     def test_framework_pure_instantiation(self):
-        """Verify mcp_framework can power an arbitrary dummy MCP service without app."""
+        """Verify mcp_server_core can power an arbitrary dummy MCP service without app."""
         dummy_mcp = FastMCP("DummyService")
 
         @dummy_mcp.tool()

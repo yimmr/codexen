@@ -57,7 +57,7 @@ from app.server import (
     write_project_file,
 )
 from app.tools import ToolResultListDict
-from mcp_framework.tunnel import (
+from mcp_server_core.tunnel import (
     TunnelHeartbeatMonitor,
     check_tunnel_health,
     restart_tunnel,

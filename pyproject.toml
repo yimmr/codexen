@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = [
+    "mcp-server-core>=0.4.0",
     "mcp>=1.2.0,<2",
     "PyYAML>=6.0.1",
     "ruamel.yaml>=0.18.0",
@@ -31,5 +32,5 @@ codexen = "app.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["app*", "mcp_framework*"]
+include = ["app*"]
 

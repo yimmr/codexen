@@ -54,9 +54,14 @@ agent_execution_contract:
 在项目根目录下执行：
 
 ```bash
-# 优先使用 uv 同步安装全部运行时与测试依赖
+# 优先使用 uv 同步安装全部运行时与测试依赖（自动从 PyPI 拉取 mcp-server-core 核心库）
 uv sync --extra test || uv pip install -e ".[test]" || pip install -e ".[test]"
 ```
+
+> 💡 **架构解耦与跨机部署说明**：  
+> Codexen 的底层 Streamable HTTP、OAuth 2.1 与 Cloudflare 隧道守护引擎已解耦为独立的开源核心包 [mcp-server-core](https://pypi.org/project/mcp-server-core/)（GitHub: [yimmr/mcp-framework](https://github.com/yimmr/mcp-framework)）。  
+> • **全新部署 / 他人使用**：直接执行上述 `uv sync` 命令即可，包管理器会自动从 PyPI 官方源拉取安装，**完全不依赖任何本地路径**。  
+> • **本地联合开发 (开发机专用)**：若需在本地修改框架源码并让项目实时生效，只需在开发机执行 `uv pip install -e <本地mcp-server-core源码路径>` 即可秒级开启热更新联动。
 
 ---
 
@@ -175,9 +180,19 @@ permissions:
      * `https://claude.ai/api/mcp/auth_callback`
      * `https://*.google.com/*`
      * `https://*.googleusercontent.com/*`
-3. **Access 访问策略 (Policies)**：
+     * `https://cloud.google.com/*`
+     * `https://*.cloud.google.com/*`
+     * `https://google.dev/*`
+     * `https://*.google.dev/*`
+3. **令牌续期与会话生命周期配置（防频繁手动重新授权 - 黄金实践）**：
+   * **背景**：Cloudflare 默认的 Refresh Token 有效期仅 24 小时、Access Token 仅 15 分钟。若保持默认，Gemini 等客户端在隔夜或闲置后会判定 Token 死亡，要求重新手动走弹窗授权。
+   * **推荐参数**（在 Zero Trust 对应 Access Application 或 API 的 `oauth_configuration.grant` 与应用设置中配置）：
+     * **Grant Session Duration**：设置为 `730h`（30 天 / 1 个月，平台上限）。使 Refresh Token 具备整月静默续期能力。
+     * **Application Session Duration**：同步设为 `730h`（30 天）。
+     * **Access Token Lifetime**：设为 `2h`（2 小时）。平衡会话平滑度与权限即时收回能力，切忌无脑拉满至数月。
+4. **Access 访问策略 (Policies)**：
    * 添加 **Allow** 策略，Include 填入您的管理员邮箱，确保只有您本人可凭邮箱验证码通过鉴权。
-4. 保存 Portal。对外统一接入端点即为 `https://mcp.yourdomain.com/mcp`。
+5. 保存 Portal。对外统一接入端点即为 `https://mcp.yourdomain.com/mcp`。
 
 ---
 
@@ -291,8 +306,10 @@ uv run python -m unittest discover tests -v
 | **Cloudflare 后台 MCP Server 显示 Error 或无法同步工具** | 1. 本地 Codexen 未启动；<br/>2. 穿透域名未解析或隧道离线；<br/>3. MCP Server 填写的 Bearer Token 与 `.env` 中的 `MCP_API_KEY` 不匹配 | **四步排查链**：<br/>1. 检查本地 `curl http://127.0.0.1:8788/health` 是否返回 healthy；<br/>2. 检查 `curl https://codexen.yourdomain.com/health` 是否可达；<br/>3. 检查 Cloudflare MCP Server 的 HTTP URL 必须包含末尾 `/mcp`；<br/>4. 检查 Cloudflare 填写的 Bearer Token 是否与当前 `.env` 中的 `MCP_API_KEY` 逐字一致。 |
 | **端口 8788 被占用 (Address already in use)** | 上次服务未完全退出或残留僵尸 PID | 运行 `stop.bat`，或执行 `uv run launcher.py --stop`，系统会自动定位并终止残留进程。 |
 | **`SecurityBoundaryViolation`** | `workspace.root` 或挂载项目路径包含了 Codexen 引擎代码自身 | 检查 `config.yaml`，确保所有挂载项目均位于外部目录（如 `D:\works`），严禁挂载 `D:\Codexen` 自身作为被开发项目。 |
-| **多个本地服务共用同一个 Cloudflare 隧道 (如 8787 和 8788)** | 同一台机器运行了多个 MCP 服务，但只想拉起一个 `cloudflared` 进程 | `mcp_framework/tunnel.py` 内置了隧道守护单例逻辑：通过本地 `127.0.0.1:20245/config` 自动感知所有 ingress 端口；只要有任意服务需要，隧道就会保持运行，无需重复启动。 |
+| **多个本地服务共用同一个 Cloudflare 隧道 (如 8787 和 8788)** | 同一台机器运行了多个 MCP 服务，但只想拉起一个 `cloudflared` 进程 | `mcp_server_core/tunnel.py` 内置了隧道守护单例逻辑：通过本地 `127.0.0.1:20245/config` 自动感知所有 ingress 端口；只要有任意服务需要，隧道就会保持运行，无需重复启动。 |
 | **命令执行返回 `needs_confirmation`** | Agent 触发了敏感高危指令（如 `del`, `rm`, `git push`） | 属于正常人机协同保护逻辑。Agent 需向人类询问确认后，再次发起调用并带上 `confirmed=True` 参数。 |
+| **Gemini 接入提示“必须关联账号才能使用此自定义应用。请重试”** | 1. 偶发 OAuth 握手超时或网络抖动；<br/>2. 浏览器内多 Google 账号 Cookie 串扰；<br/>3. CF 策略未放行当前邮箱；<br/>4. 该 Google 账号为不支持 Connected Apps 的企业/学校号 | 1. 重新输入 URL 再发起一次连接；<br/>2. 使用无痕隐身窗口仅登录目标 Google 账号进行授权；<br/>3. 检查 Cloudflare Access 策略 Include 白名单是否包含当前登录邮箱；<br/>4. 确认使用个人 Google 账号且开启了“保留活动记录”。 |
+| **Gemini 使用一天或半天后频繁失效，需重新点击 `+` 授权** | Cloudflare 默认 `grant.session_duration` 仅 24 小时，且 Gemini 属于懒惰式加载，闲置隔夜后 Refresh Token 彻底失效，触发客户端强制断开 | 参考第 3 节配置，将 Cloudflare Access 的 `oauth_configuration.grant.session_duration` 与应用 `session_duration` 提升至 `730h`（30 天），并将 `access_token_lifetime` 设为 `2h`。完成后在 Gemini 端重新绑定一次即可享受 30 天无感静默续期。 |
 
 ---
 

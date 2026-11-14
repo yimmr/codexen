@@ -47,7 +47,7 @@ flowchart TB
         LocalLoop["本地环回通道 (Local Loopback)<br/>(http://127.0.0.1:8788)"]
     end
 
-    subgraph FrameworkLayer ["3. MCP 基础平台框架 (mcp_framework)"]
+    subgraph FrameworkLayer ["3. MCP 基础平台框架 (mcp_server_core)"]
         ASGIServer["Streamable HTTP ASGI 宿主 (Starlette + FastMCP)"]
         LocalAuth["双模认证中间件 (HTTPAuthenticationMiddleware)<br/>• 生产: 本地 Bearer API Key 回源校验<br/>• 实验: 本地自主 OAuth 2.1 (RFC 8414/7591/PKCE)<br/>  (⚠️安全性未核实，默认保持关闭)"]
         ProcessSupervisor["跨平台进程看门狗<br/>• Windows Named Mutex 单实例互斥<br/>• 端口占用检测与僵尸进程清理<br/>• 集中式运行时与密钥轮转 (.runtime/)"]

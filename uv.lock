@@ -177,6 +177,7 @@ version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "mcp" },
+    { name = "mcp-server-core" },
     { name = "pillow", version = "12.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pillow", version = "13.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pystray" },
@@ -198,6 +199,7 @@ test = [
 requires-dist = [
     { name = "httpx", marker = "extra == 'test'", specifier = ">=0.27.0" },
     { name = "mcp", specifier = ">=1.2.0,<2" },
+    { name = "mcp-server-core", specifier = ">=0.4.0" },
     { name = "pillow", specifier = ">=10.0.0" },
     { name = "pystray", specifier = ">=0.19.5" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
@@ -401,6 +403,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ba/93/0142dc84a666daf8ad51a34268f34c12fd6fda4f3810c4be2504eecc8212/mcp-1.30.0.tar.gz", hash = "sha256:445414625fce5c295faa505bb11bacece661ab6f4028d57c935db57820b7a3e4", size = 680511, upload-time = "2026-09-07T14:34:15.845Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f5/f4/e58bc33317c92a0203664daaf00bf6f41166cc0149e5d6870a03f7cd004a/mcp-1.30.0-py3-none-any.whl", hash = "sha256:666edb5009503e1047c9d60346a756f94b261f05cc2625f23d41c728ffc484d0", size = 234581, upload-time = "2026-09-07T14:34:14.266Z" },
+]
+
+[[package]]
+name = "mcp-server-core"
+version = "0.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mcp" },
+    { name = "pywin32", marker = "sys_platform == 'win32'" },
+    { name = "starlette", version = "1.7.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "starlette", version = "1.10.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "uvicorn" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c2/e4/5cfe6e70102321b851aa6de9bc1be3eeb8684ae65b8d2c5170b2e6518e4c/mcp_server_core-0.4.0.tar.gz", hash = "sha256:c32ccd632e4b98b3b363f385d08fe5e58ac77e9b332b7bb730d016a2735e9c86", size = 43762, upload-time = "2026-11-14T14:05:58.585Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/19/af/426f30805c8551904ef5ba6f0b21c86697a4d88d6072e8baec62659b9aa0/mcp_server_core-0.4.0-py3-none-any.whl", hash = "sha256:342e188da517446d2553f01787a80eb63d130c8adcecc2239349ea217e6bd449", size = 46478, upload-time = "2026-11-14T14:05:57.33Z" },
 ]
 
 [[package]]
