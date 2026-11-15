@@ -236,6 +236,183 @@ class TestEndToEndObservabilityAndTracing(unittest.IsolatedAsyncioTestCase):
             finally:
                 log_mgr.close()
 
+    async def test_end_to_end_real_mcp_transport_cf_ray_and_error_trace(self):
+        """P1-1 / P1-2 / R-1 / R-2 / R-9: Full MCP Streamable HTTP transport test with distinct CF-Rays."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            cfg_file = base / "config.yaml"
+            proj_dir = base / "test_workspace"
+            proj_dir.mkdir(parents=True, exist_ok=True)
+            (proj_dir / "sample.txt").write_text("Hello from Codexen live transport!", encoding="utf-8")
+
+            cfg_data = {
+                "workspace": {"root": str(base / "workspace")},
+                "http": {"require_auth": False, "port": 8788},
+                "logging": {
+                    "dir": ".runtime/logs",
+                    "filenames": {"app": "codexen_service.log"},
+                    "enable_console": False,
+                },
+                "projects": {
+                    "demo_proj": {
+                        "root": str(proj_dir),
+                        "description": "Live transport project",
+                    }
+                },
+            }
+            cfg_file.write_text(yaml.safe_dump(cfg_data), encoding="utf-8")
+
+            cm = ConfigManager(config_path=cfg_file, base_dir=base)
+            server, cm, oauth_server = create_http_server(root=base, config_mgr=cm)
+
+            log_mgr = setup_logging(
+                base_dir=base,
+                config=cm.logging_config,
+                service_name="codexen_service",
+            )
+
+            app = build_starlette_app(
+                server=server,
+                config_mgr=cm,
+                oauth_server=oauth_server,
+                require_auth=False,
+            )
+
+            headers_common = {"accept": "application/json, text/event-stream"}
+
+            try:
+                async with app.router.lifespan_context(app):
+                    async with httpx.AsyncClient(
+                        transport=httpx.ASGITransport(app=app), base_url="http://localhost:8788"
+                    ) as client:
+                        # 1. MCP Initialize with ray-init-CODEXEN
+                        res_init = await client.post(
+                            "/mcp",
+                            json={
+                                "jsonrpc": "2.0",
+                                "id": "init-1",
+                                "method": "initialize",
+                                "params": {
+                                    "protocolVersion": "2024-11-05",
+                                    "capabilities": {},
+                                    "clientInfo": {"name": "test-client", "version": "1.0"},
+                                },
+                            },
+                            headers={**headers_common, "cf-ray": "ray-init-CODEXEN"},
+                        )
+                        self.assertEqual(res_init.status_code, 200)
+                        session_id = res_init.headers.get("mcp-session-id")
+                        self.assertIsNotNone(session_id)
+
+                        # 2. Initialized notification with ray-notif-CODEXEN
+                        res_notif = await client.post(
+                            "/mcp",
+                            json={"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+                            headers={**headers_common, "mcp-session-id": session_id, "cf-ray": "ray-notif-CODEXEN"},
+                        )
+                        self.assertEqual(res_notif.status_code, 202)
+
+                        # 3. Successful tool call with ray-read-SUCCESS
+                        res_call1 = await client.post(
+                            "/mcp",
+                            json={
+                                "jsonrpc": "2.0",
+                                "id": "call-1",
+                                "method": "tools/call",
+                                "params": {
+                                    "name": "read_file",
+                                    "arguments": {"project_id": "demo_proj", "relative_path": "sample.txt"},
+                                },
+                            },
+                            headers={**headers_common, "mcp-session-id": session_id, "cf-ray": "ray-read-SUCCESS"},
+                        )
+                        self.assertEqual(res_call1.status_code, 200)
+                        self.assertIn("Hello from Codexen live transport!", res_call1.text)
+
+                        # 4. Error tool call with ray-err-FAILURE
+                        res_call2 = await client.post(
+                            "/mcp",
+                            json={
+                                "jsonrpc": "2.0",
+                                "id": "call-2",
+                                "method": "tools/call",
+                                "params": {
+                                    "name": "read_file",
+                                    "arguments": {"project_id": "demo_proj", "relative_path": "missing_file.txt"},
+                                },
+                            },
+                            headers={**headers_common, "mcp-session-id": session_id, "cf-ray": "ray-err-FAILURE"},
+                        )
+                        self.assertEqual(res_call2.status_code, 200)
+
+                        call2_body = res_call2.text
+                        self.assertIn("isError", call2_body)
+                        self.assertIn("trace_id: ray-err-FAILURE", call2_body)
+                        self.assertNotIn("ray-init-CODEXEN", call2_body)
+
+                for h in log_mgr._handlers:
+                    h.flush()
+
+                logs_dir = base / ".runtime" / "logs"
+                access_txt = (logs_dir / "access.log").read_text(encoding="utf-8")
+                app_txt = (logs_dir / "codexen_service.log").read_text(encoding="utf-8")
+                error_txt = (logs_dir / "error.log").read_text(encoding="utf-8")
+
+                # Verify each request logged its own ray ID in access.log
+                self.assertIn("[trace_id: ray-init-CODEXEN]", access_txt)
+                self.assertIn("[trace_id: ray-notif-CODEXEN]", access_txt)
+                self.assertIn("[trace_id: ray-read-SUCCESS]", access_txt)
+                self.assertIn("[trace_id: ray-err-FAILURE]", access_txt)
+
+                # Verify tool execution logs tied to respective request ray IDs
+                self.assertIn("Tool execution started: read_file", app_txt)
+                self.assertIn("[trace_id: ray-read-SUCCESS]", app_txt)
+                self.assertIn("Tool execution completed: read_file", app_txt)
+
+                # Verify error log tied to ray-err-FAILURE and contains stacktrace
+                self.assertIn("Tool execution failed: read_file", error_txt)
+                self.assertIn("[trace_id: ray-err-FAILURE]", error_txt)
+                self.assertIn("missing_file.txt", error_txt)
+                self.assertNotIn("[trace_id: ray-init-CODEXEN] Tool execution failed", error_txt)
+
+            finally:
+                log_mgr.close()
+
+    def test_production_entrypoint_config_yaml_logging_wiring(self):
+        """P1-3 / R-3: Verify production runner receives config.yaml logging."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            base = Path(tmp_dir)
+            cfg_file = base / "config.yaml"
+            cfg_data = {
+                "workspace": {"root": str(base / "workspace")},
+                "http": {"require_auth": False, "port": 8788},
+                "logging": {
+                    "dir": ".runtime/custom_entry_logs",
+                    "filenames": {"app": "custom_entry.log"},
+                    "enable_console": False,
+                },
+                "projects": {},
+            }
+            cfg_file.write_text(yaml.safe_dump(cfg_data), encoding="utf-8")
+
+            cm = ConfigManager(config_path=cfg_file, base_dir=base)
+            self.assertEqual(cm.http_settings.logging_config.log_dir, ".runtime/custom_entry_logs")
+            self.assertEqual(cm.http_settings.logging_config.app_filename, "custom_entry.log")
+
+            # Setup logging directly from http_settings.logging_config (as production runner does)
+            mgr = setup_logging(base_dir=base, config=cm.http_settings.logging_config, service_name="test_prod")
+            try:
+                app_lg = mgr.get_app_logger()
+                app_lg.info("Production test log message")
+                for h in mgr._handlers:
+                    h.flush()
+
+                custom_log = base / ".runtime" / "custom_entry_logs" / "custom_entry.log"
+                self.assertTrue(custom_log.exists(), f"{custom_log} must exist")
+                self.assertIn("Production test log message", custom_log.read_text(encoding="utf-8"))
+            finally:
+                mgr.close()
+
     def test_audit_log_backward_compatibility(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             base = Path(tmp_dir)

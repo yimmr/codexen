@@ -67,12 +67,70 @@ def kill_process_tree(pid: int) -> None:
     if pid <= 0:
         return
     if os.name == "nt":
-        creationflags = subprocess.CREATE_NO_WINDOW
-        subprocess.run(
-            ["taskkill", "/F", "/T", "/PID", str(pid)],
-            capture_output=True,
-            creationflags=creationflags,
-        )
+        # 1. Attempt fast Win32 API termination for the process and its child tree
+        try:
+            import ctypes
+            import ctypes.wintypes
+            kernel32 = ctypes.windll.kernel32
+            TH32CS_SNAPPROCESS = 0x00000002
+
+            class PROCESSENTRY32(ctypes.Structure):
+                _fields_ = [
+                    ("dwSize", ctypes.wintypes.DWORD),
+                    ("cntUsage", ctypes.wintypes.DWORD),
+                    ("th32ProcessID", ctypes.wintypes.DWORD),
+                    ("th32DefaultHeapID", ctypes.c_size_t),
+                    ("th32ModuleID", ctypes.wintypes.DWORD),
+                    ("cntThreads", ctypes.wintypes.DWORD),
+                    ("th32ParentProcessID", ctypes.wintypes.DWORD),
+                    ("pcPriClassBase", ctypes.c_long),
+                    ("dwFlags", ctypes.wintypes.DWORD),
+                    ("szExeFile", ctypes.c_char * 260),
+                ]
+
+            pids = [pid]
+            h_snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+            if h_snap and h_snap != -1:
+                pe = PROCESSENTRY32()
+                pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
+                parent_map: dict[int, list[int]] = {}
+                if kernel32.Process32First(h_snap, ctypes.byref(pe)):
+                    while True:
+                        parent_map.setdefault(pe.th32ParentProcessID, []).append(pe.th32ProcessID)
+                        if not kernel32.Process32Next(h_snap, ctypes.byref(pe)):
+                            break
+                kernel32.CloseHandle(h_snap)
+                queue = [pid]
+                while queue:
+                    curr = queue.pop(0)
+                    for child in parent_map.get(curr, []):
+                        pids.append(child)
+                        queue.append(child)
+
+            import win32api
+            import win32con
+            for p in reversed(pids):
+                try:
+                    h = win32api.OpenProcess(win32con.PROCESS_TERMINATE, False, p)
+                    if h:
+                        win32api.TerminateProcess(h, 1)
+                        win32api.CloseHandle(h)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # 2. taskkill fallback with timeout
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                capture_output=True,
+                creationflags=creationflags,
+                timeout=2.0,
+            )
+        except (subprocess.TimeoutExpired, Exception):
+            pass
     else:
         try:
             import signal

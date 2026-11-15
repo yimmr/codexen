@@ -249,10 +249,10 @@ curl -s http://127.0.0.1:8788/health
 curl -s https://codexen.yourdomain.com/health
 # 期望返回: {"status":"healthy"}
 
-# 3. 运行全量自动化测试基线 (161 项测试)
+# 3. 运行全量自动化测试基线 (172 项测试)
 # 本地 editable mcp-server-core 环境使用 --frozen；全新环境按 §1.2 先 uv sync
 uv run --frozen python -m unittest discover tests -v
-# 期望返回: Ran 161 tests ... OK
+# 期望返回: Ran 172 tests ... OK (skipped=1)
 ```
 
 ---
@@ -373,3 +373,65 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now codexen.service
 sudo systemctl status codexen.service
 ```
+
+---
+
+## 8. 全链路可观测性与日志运维 (Logging & Observability Operations)
+
+Codexen 依托底层通用框架 `mcp-server-core` 0.7.0，构建了生产级全链路可观测性与日志分流体系。
+
+### 8.1 物理目录与沙箱安全约束 (Log Containment)
+* **默认存储路径**：`<project_root>/.runtime/logs/`（完全收敛于项目运行时目录下，已加入 `.gitignore`）。
+* **越权逃逸硬防御**：`allow_outside_base` 默认设为 `false`。系统强制校验日志目录必须位于当前项目根目录下；严禁通过 `../` 逃逸到项目外或 `%LOCALAPPDATA%` / 用户主目录，杜绝主机全局环境污染。
+
+### 8.2 三流分立架构 (Three-Stream Logging Architecture)
+不同职责的日志被清晰拆解为三个独立滚动文件，消除了混杂与干扰：
+
+| 日志文件名 | 角色与定位 | 记录内容与典型格式 |
+| :--- | :--- | :--- |
+| **`access.log`** | HTTP / 网络访问审计流 | 记录每个 HTTP 请求的方法、路径、状态码、处理耗时与来源 IP，格式如：<br/>`[2026-11-15 21:00:00] [INFO] [trace_id: 8e5f29a0b123-SJC] 127.0.0.1 - "POST /mcp HTTP/1.1" 200 12.34ms` |
+| **`codexen.log`**<br/>*(或 `codexen_service.log`)* | 业务工具调用生命周期流 | 记录每个 FastMCP 工具的执行生命周期（`Tool started` / `Tool finished`）、执行耗时（毫秒级精度）、脱敏后的入参字典与出参结构体摘要。 |
+| **`error.log`** | 异常与堆栈追踪流 | 仅在工具报错或服务异常时记录，附带完整 Python 异常调用栈（Traceback）与同源 `trace_id`。 |
+
+> 💡 **启动器与看门狗分流 (`boot.out.log` / `boot.err.log`)**：  
+> 当通过 `launcher.py` 或系统托盘运行 Codexen 时，父级看门狗进程的子进程标准输出与错误重定向至 `.runtime/logs/boot.out.log` 与 `.runtime/logs/boot.err.log`，不再侵入业务 `app.log` 或 `error.log`，保持业务流日志的绝对整洁。
+
+### 8.3 全链路 Trace ID 穿透排查
+系统支持 Cloudflare 边缘端点与客户端标头无感穿透：
+1. **边缘传递**：当外部请求经由 Cloudflare 访问时，请求头中的 `CF-Ray`（如 `8e5f29a0b123-SJC`）或 `X-Request-ID` 会被 ASGI 追踪中间件捕获。若无外部标头，系统自动生成局部唯一短 ID（如 `loc_a1b2c3d4`）。
+2. **切面关联**：请求上下文在进入 FastMCP 通用切面时，Trace ID 被动态注入到当前执行上下文及所有日志输出中。
+3. **报错自愈反馈**：若工具调用发生业务或系统异常，MCP 客户端收到的 JSON-RPC 错误提示统一包装为：
+   ```text
+   [trace_id: 8e5f29a0b123-SJC] PathSecurityError: Security violation: path '../secret' escapes project root boundary.
+   ```
+4. **一键排查**：运维人员根据客户端报告的 `trace_id`，只需一条命令即可关联全部访问与异常细节：
+   ```bash
+   grep "8e5f29a0b123-SJC" .runtime/logs/*.log
+   ```
+
+### 8.4 参数自动脱敏与安全边界
+通用切面拦截器内置敏感凭据正则防护：
+* **脱敏覆盖**：包含 `api_key`, `token`, `password`, `secret`, `authorization`, `cookie` 等敏感字段的入参均被自动置换为 `***REDACTED***`，严防凭据落盘泄露；
+* **业务参数放行**：对 `authorized_paths`、`author` 等正常业务参数实施精准放行，杜绝误脱敏。
+
+### 8.5 配置优先级与环境变量字典
+日志系统的配置加载遵循严格的四级优先序：
+$$\text{代码显式参数} > \text{环境变量 (MCP\_LOG\_*)} > \text{config.yaml (logging 节)} > \text{内置默认值}$$
+
+| 环境变量 | 对应 `config.yaml` 字段 | 默认值 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `MCP_LOG_LEVEL` | `logging.level` | `INFO` | 日志输出级别 (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+| `MCP_LOG_DIR` | `logging.dir` | `.runtime/logs` | 日志物理子目录 (相对项目根) |
+| `MCP_LOG_MAX_BYTES` | `logging.max_bytes` | `10485760` (10MB) | 单个日志文件滚动大小阈值 (字节) |
+| `MCP_LOG_BACKUP_COUNT` | `logging.backup_count` | `5` | 滚动归档保留文件份数 |
+| `MCP_LOG_CONSOLE` | `logging.enable_console` | `true` | 是否同步输出至控制台标准输出 |
+| `MCP_LOG_ALLOW_OUTSIDE_BASE`| `logging.allow_outside_base`| `false` | 是否允许日志目录超出项目根基准 (生产环境务必保持 false) |
+| `MCP_LOG_APP_FILENAME` | `logging.filenames.app` | `codexen.log` | 业务流日志文件名 |
+| `MCP_LOG_ACCESS_FILENAME` | `logging.filenames.access` | `access.log` | 网络访问流日志文件名 |
+| `MCP_LOG_ERROR_FILENAME` | `logging.filenames.error` | `error.log` | 异常流日志文件名 |
+
+### 8.6 开发模式与生产发布模式 (Packaging & Sources)
+* **开发模式 (`[tool.uv.sources]`)**：  
+  在本地开发机中，`pyproject.toml` 通过 `[tool.uv.sources]` 将 `mcp-server-core` 指向本地源码路径 `../works/mcp-server-core`，执行 `uv run` 或 `uv lock` 时自动支持双仓联调与实时热更新。
+* **发布与生产部署模式**：  
+  在发布到 PyPI 或全新机器部署时，只需移除 `pyproject.toml` 中的 `[tool.uv.sources]` 片段并执行 `uv lock`，包管理器将自动从 PyPI 官方源拉取并编译 `mcp-server-core>=0.7.0`，实现零本地路径依赖的确定性分发。

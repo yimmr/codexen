@@ -29,6 +29,10 @@ def is_git_available() -> bool:
 @unittest.skipUnless(is_git_available(), "Git executable not available on system")
 class TestGitIgnoreParity(unittest.TestCase):
     def setUp(self) -> None:
+        if "GIT_CONFIG_GLOBAL" not in os.environ:
+            os.environ["GIT_CONFIG_GLOBAL"] = "NUL" if os.name == "nt" else "/dev/null"
+        if "GIT_CONFIG_SYSTEM" not in os.environ:
+            os.environ["GIT_CONFIG_SYSTEM"] = "NUL" if os.name == "nt" else "/dev/null"
         self.temp_dir = Path(tempfile.mkdtemp(prefix="codexen_ignore_parity_"))
         subprocess.run(["git", "init"], cwd=self.temp_dir, capture_output=True, check=True)
         clear_ignore_manager_cache()

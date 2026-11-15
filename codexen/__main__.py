@@ -15,7 +15,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from .server import config_manager, mcp
+from .server import codexen_payload_hook, config_manager, mcp
 from mcp_server_core.server import run_mcp_server
 
 
@@ -54,6 +54,8 @@ def main() -> None:
             base_dir=BASE_DIR,
             banner_items_builder=banner_items_builder,
             root_info_builder=build_root_info,
+            env_cfg=config_manager.http_settings,
+            payload_hook=codexen_payload_hook,
         )
     except (KeyboardInterrupt, SystemExit):
         pass

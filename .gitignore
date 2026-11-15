@@ -53,3 +53,5 @@ bin/
 uv.lock
 .pytest_cache/
 
+.pytest_cache
+

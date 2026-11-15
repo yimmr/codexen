@@ -159,13 +159,13 @@ class ProcessSession:
 
         kill_process_tree(pid)
         try:
-            self.process.wait(timeout=2.0)
+            self.process.wait(timeout=1.0)
         except Exception:
-            if force:
-                try:
-                    self.process.kill()
-                except Exception:
-                    pass
+            try:
+                self.process.kill()
+                self.process.wait(timeout=1.0)
+            except Exception:
+                pass
 
         with self._lock:
             if not self.ended_at:

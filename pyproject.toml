@@ -35,4 +35,8 @@ codexen = "codexen.__main__:main"
 where = ["."]
 include = ["codexen*"]
 
+[tool.uv.sources]
+mcp-server-core = { path = "../works/mcp-server-core", editable = true }
+
+
 

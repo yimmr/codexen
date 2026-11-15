@@ -151,6 +151,7 @@ permissions:
 logging:
   level: "INFO"               # 日志级别: DEBUG, INFO, WARNING, ERROR
   dir: ".runtime/logs"        # 日志存放子目录 (相对项目根目录)
+  allow_outside_base: false   # 限制日志严格收敛于项目根目录下 (防越权写入)
   filenames:
     app: "codexen.log"        # 业务工具执行流日志文件名
     access: "access.log"      # HTTP/网络访问流日志文件名

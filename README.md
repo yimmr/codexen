@@ -125,6 +125,12 @@ FastMCP 默认将 Python 列表转化为多个分散的 `TextContent` 块。许�
 * **人机协同（HITL）穿透**：严禁 Agent 擅自深入被忽略目录；需要穿透时必须向用户阐明理由并获得白名单授权（`authorized_paths`）。
 * **防截断大模型幻觉**：提供详尽的 `search_audit` 遥测元数据与 `read_file` 结构化分页自愈提示（`hint`），消灭静默丢弃与代码误改。详见 🗺️ **[docs/evolution-roadmap.md](docs/evolution-roadmap.md)**。
 
+### 6. 企业级全链路可观测性与日志分流体系
+基于 `mcp-server-core` 0.7.0 深度融合的三流日志架构与通用 FastMCP 拦截切面：
+* **三流精准分流**：HTTP 访问流 (`access.log`)、业务工具调用流 (`codexen.log` / `codexen_service.log`)、异常排错流 (`error.log`) 分别独立落盘，互不干扰；
+* **全链路 Trace 串联**：从 Cloudflare 边缘 `CF-Ray` / `X-Request-ID` 直通底层工具执行与客户端响应；当工具执行报错时，客户端直接收到包含 `[trace_id: <CF-Ray>]` 的结构化错误提示，管理员可通过 Trace ID 毫秒级检索全部请求链路与堆栈；
+* **零侵入参数脱敏与沙箱边界约束**：所有工具入参中包含的 API Key、Token、Password 及敏感凭证自动替换为 `***REDACTED***`，同时智能放行 `authorized_paths` 等系统参数；日志落盘强制受限于本地沙箱边界（`allow_outside_base=False`），杜绝路径穿越污染操作系统。
+
 ---
 
 ## 🛠️ 核心工具矩阵表 (Tool Matrix)
@@ -183,7 +189,7 @@ FastMCP 默认将 Python 列表转化为多个分散的 `TextContent` 块。许�
 
 ## 🧪 自动化测试验证 (Testing)
 
-Codexen 具备完善严密的测试矩阵（涵盖完整 OAuth 2.1 交互、PKCE 校验、FastMCP 序列化防截断、Zip-Slip 漏洞攻击防御、敏感文件读取阻断、多模态视觉响应、异步常驻进程生命周期等）：
+Codexen 具备完善严密的测试矩阵（涵盖完整 OAuth 2.1 交互、PKCE 校验、FastMCP 序列化防截断、Zip-Slip 漏洞攻击防御、敏感文件读取阻断、多模态视觉响应、异步常驻进程生命周期、全链路 Trace 追踪与三流日志落盘等）：
 
 ```bash
 # 本地 mcp-server-core 为 editable 时使用 --frozen（按现有 uv.lock）；全新环境按 DEPLOYMENT 先 uv sync 即可
@@ -192,11 +198,11 @@ uv run --frozen python -m unittest discover tests -v
 
 执行结果：
 ```text
-Ran 161 tests in 11.919s
+Ran 172 tests in 119.318s
 
-OK
+OK (skipped=1)
 ```
-**161 项单元与集成测试全量通过！**
+**172 项自动化与端到端集成测试全量通过（配合底层 mcp-server-core 140 项测试，双仓共 312 项测试无缝通过）！**
 
 ---
 
