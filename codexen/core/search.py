@@ -52,6 +52,7 @@ def search_project_code(
     fallback_ignored_patterns: list[str] | None = None,
     max_results: int = 200,
     max_file_size_bytes: int = MAX_SEARCH_FILE_SIZE_BYTES,
+    max_file_size_mb: int = 2,
     max_files_scanned: int = MAX_SEARCH_FILES_SCANNED,
     timeout_seconds: float = SEARCH_TIMEOUT_SECONDS,
     confirmed: bool = False,
@@ -66,6 +67,9 @@ def search_project_code(
 
     if not query:
         raise FileServiceError("Search query cannot be empty.")
+
+    if max_file_size_mb and max_file_size_mb != 2:
+        max_file_size_bytes = max(1, max_file_size_mb) * 1024 * 1024
 
     flags = 0 if case_sensitive else re.IGNORECASE
     if is_regex:
@@ -131,6 +135,10 @@ def search_project_code(
     limit_reached = False
     timed_out = False
 
+    large_files_skipped: list[dict[str, Any]] = []
+    truncated_lines_count = 0
+    directories_pruned: list[str] = []
+
     effective_authorized = clean_authorized if confirmed else None
 
     for root, dirs, files in os.walk(target_dir):
@@ -152,6 +160,8 @@ def search_project_code(
                 check_parents=False,
                 authorized_paths=effective_authorized,
             ):
+                if len(directories_pruned) < 100 and rel_d not in directories_pruned:
+                    directories_pruned.append(rel_d)
                 continue
             filtered_dirs.append(d)
 
@@ -189,7 +199,14 @@ def search_project_code(
 
             # Skip large files beyond size limit
             try:
-                if file_path.stat().st_size > max_file_size_bytes:
+                st_size = file_path.stat().st_size
+                if st_size > max_file_size_bytes:
+                    large_files_skipped.append({
+                        "file": rel_file,
+                        "size_bytes": st_size,
+                        "size_mb": round(st_size / (1024 * 1024), 2),
+                        "reason": f"Exceeded max_file_size_mb limit ({round(max_file_size_bytes / (1024 * 1024))}MB)",
+                    })
                     continue
             except OSError:
                 continue
@@ -203,7 +220,11 @@ def search_project_code(
             try:
                 with open(file_path, "r", encoding="utf-8", errors="replace") as fh:
                     for line_num, line in enumerate(fh, start=1):
-                        searchable = line[:MAX_SEARCH_LINE_CHARS] if len(line) > MAX_SEARCH_LINE_CHARS else line
+                        if len(line) > MAX_SEARCH_LINE_CHARS:
+                            truncated_lines_count += 1
+                            searchable = line[:MAX_SEARCH_LINE_CHARS]
+                        else:
+                            searchable = line
                         m = pattern.search(searchable)
                         if m:
                             matches.append({
@@ -250,4 +271,9 @@ def search_project_code(
         "timed_out": timed_out,
         "duration_ms": elapsed_ms,
         "matches": matches,
+        "search_audit": {
+            "large_files_skipped": large_files_skipped,
+            "truncated_lines_count": truncated_lines_count,
+            "directories_pruned": directories_pruned,
+        },
     }

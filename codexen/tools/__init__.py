@@ -277,7 +277,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         limit: int = 0,
         start_line: int = 0,
         end_line: int = 0,
-    ) -> str:
+    ) -> dict[str, Any] | str:
         """Read a UTF-8 text file within a project. The path cannot escape the project root boundary.
 
         Args:
@@ -302,6 +302,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             limit=limit,
             start_line=start_line,
             end_line=end_line,
+            auto_paginate=True,
         )
 
     @_register_tool()
@@ -315,7 +316,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         limit: int = 0,
         start_line: int = 0,
         end_line: int = 0,
-    ) -> str:
+    ) -> dict[str, Any] | str:
         """Alias for read_project_file. Read full or partial text content of a project file."""
         return read_project_file(
             project_id=project_id,
@@ -841,6 +842,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         case_sensitive: bool = False,
         file_extensions: list[str] = [],
         max_results: int = 200,
+        max_file_size_mb: int = 2,
         confirmed: bool = False,
         authorized_paths: list[str] = [],
     ) -> dict[str, Any]:
@@ -856,6 +858,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             case_sensitive: Whether match should be case-sensitive (default: False).
             file_extensions: List of extensions to include (e.g. ['.py', '.yaml', '.ts']).
             max_results: Maximum matches to return (default: 200).
+            max_file_size_mb: Maximum single file size in megabytes to inspect (default: 2MB).
             confirmed: Whether the user confirmed penetration of ignored directories.
             authorized_paths: Whitelisted paths explicitly authorized by the user for penetration.
         """
@@ -870,6 +873,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             file_extensions=file_extensions,
             fallback_ignored_patterns=config_mgr.settings.ignored_patterns,
             max_results=min(max_results, config_mgr.settings.max_search_results),
+            max_file_size_mb=max_file_size_mb,
             confirmed=confirmed,
             authorized_paths=authorized_paths,
         )
@@ -885,6 +889,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         case_sensitive: bool = False,
         file_extensions: list[str] = [],
         max_results: int = 200,
+        max_file_size_mb: int = 2,
         confirmed: bool = False,
         authorized_paths: list[str] = [],
     ) -> dict[str, Any]:
@@ -899,6 +904,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             case_sensitive=case_sensitive,
             file_extensions=file_extensions,
             max_results=max_results,
+            max_file_size_mb=max_file_size_mb,
             confirmed=confirmed,
             authorized_paths=authorized_paths,
         )
@@ -914,6 +920,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         case_sensitive: bool = False,
         file_extensions: list[str] = [],
         max_results: int = 200,
+        max_file_size_mb: int = 2,
         confirmed: bool = False,
         authorized_paths: list[str] = [],
     ) -> dict[str, Any]:
@@ -928,6 +935,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             case_sensitive=case_sensitive,
             file_extensions=file_extensions,
             max_results=max_results,
+            max_file_size_mb=max_file_size_mb,
             confirmed=confirmed,
             authorized_paths=authorized_paths,
         )

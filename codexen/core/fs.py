@@ -236,7 +236,8 @@ def read_project_file(
     limit: int = 0,
     start_line: int = 0,
     end_line: int = 0,
-) -> str:
+    auto_paginate: bool = False,
+) -> str | dict[str, Any]:
     """Read full or partial text content of a file within the project."""
     assert_not_sensitive_path(relative_path, "Reading")
     ensure_project_accessible(project)
@@ -256,7 +257,7 @@ def read_project_file(
     except OSError as e:
         raise FileServiceError(f"Failed to inspect file '{relative_path}': {e}") from e
 
-    if limit == 0 and end_line == 0 and file_size > max_chars * 4:
+    if limit == 0 and end_line == 0 and file_size > max_chars * 4 and not auto_paginate:
         raise FileSizeLimitError(
             f"File '{relative_path}' ({file_size} bytes) exceeds safety limit (max {max_chars} chars)."
         )
@@ -266,22 +267,92 @@ def read_project_file(
     except Exception as e:
         raise FileServiceError(f"Failed to read file '{relative_path}' with encoding '{encoding}': {e}") from e
 
+    lines = content.splitlines(keepends=True)
+    total_lines = len(lines)
+
     # Line-based slicing takes precedence if specified
     if start_line > 0 or end_line > 0:
-        lines = content.splitlines(keepends=True)
         s = max(0, start_line - 1)
-        e = end_line if end_line > 0 else len(lines)
-        return "".join(lines[s:e])
+        e = end_line if end_line > 0 else total_lines
+        slice_lines = lines[s:e]
+        slice_content = "".join(slice_lines)
+
+        if len(slice_content) > max_chars:
+            if not auto_paginate:
+                raise FileSizeLimitError(
+                    f"Selected lines in '{relative_path}' exceed max allowed limit of {max_chars} characters."
+                )
+            # Self-healing pagination on oversized slice
+            cur_chars = 0
+            fit_count = 0
+            for l in slice_lines:
+                if cur_chars + len(l) > max_chars and fit_count > 0:
+                    break
+                cur_chars += len(l)
+                fit_count += 1
+            fit_count = max(1, fit_count)
+            returned_end = s + fit_count
+            chunk_size = fit_count
+            next_start = returned_end + 1
+            next_end = min(total_lines, returned_end + chunk_size)
+            return {
+                "status": "success",
+                "project": project.name,
+                "relative_path": relative_path,
+                "encoding": encoding,
+                "content": "".join(slice_lines[:fit_count]),
+                "truncated": True,
+                "truncation_reason": "max_read_chars_limit_reached",
+                "total_file_lines": total_lines,
+                "returned_start_line": s + 1,
+                "returned_end_line": returned_end,
+                "returned_chars": cur_chars,
+                "next_start_line": next_start,
+                "next_offset": cur_chars,
+                "hint": f"File truncated due to size limit. Call read_file(project_id='{project.name}', relative_path='{relative_path}', start_line={next_start}, end_line={next_end}) to read the next segment.",
+            }
+
+        return slice_content
 
     # Character offset / limit slicing
     if offset > 0 or limit > 0:
         end = offset + limit if limit > 0 else len(content)
         return content[offset:end]
 
+    # Full file read
     if len(content) > max_chars:
-        raise FileSizeLimitError(
-            f"File '{relative_path}' has {len(content)} characters, exceeding the max allowed limit of {max_chars} characters."
-        )
+        if not auto_paginate:
+            raise FileSizeLimitError(
+                f"File '{relative_path}' has {len(content)} characters, exceeding the max allowed limit of {max_chars} characters."
+            )
+        # Self-healing pagination on full file
+        cur_chars = 0
+        fit_count = 0
+        for l in lines:
+            if cur_chars + len(l) > max_chars and fit_count > 0:
+                break
+            cur_chars += len(l)
+            fit_count += 1
+        fit_count = max(1, fit_count)
+        chunk_size = fit_count
+        next_start = fit_count + 1
+        next_end = min(total_lines, fit_count + chunk_size)
+        return {
+            "status": "success",
+            "project": project.name,
+            "relative_path": relative_path,
+            "encoding": encoding,
+            "content": "".join(lines[:fit_count]),
+            "truncated": True,
+            "truncation_reason": "max_read_chars_limit_reached",
+            "total_file_lines": total_lines,
+            "returned_start_line": 1,
+            "returned_end_line": fit_count,
+            "returned_chars": cur_chars,
+            "next_start_line": next_start,
+            "next_offset": cur_chars,
+            "hint": f"File truncated due to size limit. Call read_file(project_id='{project.name}', relative_path='{relative_path}', start_line={next_start}, end_line={next_end}) to read the next segment.",
+        }
 
     return content
 
