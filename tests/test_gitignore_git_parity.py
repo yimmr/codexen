@@ -43,7 +43,7 @@ class TestGitIgnoreParity(unittest.TestCase):
 
     def run_git_check_ignore(self, paths: list[str]) -> dict[str, tuple[bool | None, str]]:
         """Run `git check-ignore -v -n --stdin` and parse (is_ignored, pattern).
-        
+
         Returns:
             dict mapping path -> (True=ignored, False=negated, None=unmatched, matched_pattern)
         """
@@ -134,7 +134,7 @@ class TestGitIgnoreParity(unittest.TestCase):
         git_paths = [p if not is_dir else p for p, is_dir in test_paths]
         git_results = self.run_git_check_ignore(git_paths)
 
-        for path, is_dir in test_paths:
+        for path, _is_dir in test_paths:
             spec_res = spec.check_file(path)
             git_verdict, _ = git_results[path]
             self.assertEqual(

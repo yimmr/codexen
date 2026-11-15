@@ -30,8 +30,8 @@ from .exceptions import (
     ReadOnlyProjectError,
     ZipSlipSecurityError,
 )
-from .tools import register_file_tools
 from .server import mcp
+from .tools import register_file_tools
 
 __all__ = [
     "ConfigManager",

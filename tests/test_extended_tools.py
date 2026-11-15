@@ -46,15 +46,15 @@ class TestExtendedTools(unittest.TestCase):
         self.config_file = Path(self.temp_dir) / "settings.yaml"
         self.config_file.write_text(f"""
 workspace:
-  root: "{str(self.workspace_dir).replace('\\', '/')}"
+  root: "{self.workspace_dir.as_posix()}"
   allow_create_project: true
 projects:
   proj_alpha:
-    root: "{str(self.proj1_root).replace('\\', '/')}"
+    root: "{self.proj1_root.as_posix()}"
     description: "Alpha"
     read_only: false
   proj_beta:
-    root: "{str(self.proj2_root).replace('\\', '/')}"
+    root: "{self.proj2_root.as_posix()}"
     description: "Beta"
     read_only: false
 mcp:

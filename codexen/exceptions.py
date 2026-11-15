@@ -32,6 +32,11 @@ class ReadOnlyProjectError(FileServiceError):
     pass
 
 
+class PermissionDeniedError(FileServiceError):
+    """Raised when an operation is prohibited by server configuration permissions."""
+    pass
+
+
 class FileSizeLimitError(FileServiceError):
     """Raised when a file exceeds the maximum allowed characters/size for reading."""
     pass

@@ -1,11 +1,11 @@
 """Core filesystem operations: read, write, edit snippets, list, delete, and copy."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import fnmatch
 import os
-from pathlib import Path
 import shutil
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from ..config import ProjectConfig
@@ -13,13 +13,13 @@ from ..exceptions import (
     FileServiceError,
     FileSizeLimitError,
     PathSecurityError,
+    PermissionDeniedError,
     ReadOnlyProjectError,
 )
 from .gitignore import get_project_ignore_manager, is_path_authorized, log_penetration_audit
 from .security import (
     assert_not_sensitive_path,
     ensure_project_accessible,
-    is_sensitive_path,
     normalize_relative_path,
     safe_resolve_path,
 )
@@ -71,7 +71,7 @@ def list_project_files(
     authorized_paths: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """List files and directories inside a project.
-    
+
     Supports optional pattern (glob), extension filtering, and HITL penetration.
     """
     ensure_project_accessible(project)
@@ -299,50 +299,66 @@ def read_project_file(
             f"File '{relative_path}' ({file_size} bytes) exceeds safety limit (max {max_chars} chars)."
         )
 
-    try:
-        content = file_path.read_text(encoding=encoding, errors="replace")
-    except Exception as e:
-        raise FileServiceError(f"Failed to read file '{relative_path}' with encoding '{encoding}': {e}") from e
-
-    lines = content.splitlines(keepends=True)
-    total_lines = len(lines)
-
-    # Line-based slicing takes precedence if specified
+    # 1. Line-based streaming slice takes precedence if specified (O(1) RAM)
     if start_line > 0 or end_line > 0:
-        s = max(0, start_line - 1)
-        e = end_line if end_line > 0 else total_lines
-        slice_lines = lines[s:e]
-        slice_content = "".join(slice_lines)
+        start_idx = max(0, start_line - 1)
+        end_idx = end_line if end_line > 0 else 0
+        slice_lines: list[str] = []
+        cur_line_no = 0
+        prior_chars = 0
+        cur_chars = 0
+        hit_char_limit = False
+        fit_count = 0
+        total_lines = 0
 
-        if len(slice_content) > max_chars:
-            if not auto_paginate:
-                raise FileSizeLimitError(
-                    f"Selected lines in '{relative_path}' exceed max allowed limit of {max_chars} characters."
-                )
-            # Self-healing pagination on oversized slice
-            cur_chars = 0
-            fit_count = 0
-            for l in slice_lines:
-                if cur_chars + len(l) > max_chars and fit_count > 0:
-                    break
-                cur_chars += len(l)
-                fit_count += 1
+        try:
+            with open(file_path, encoding=encoding, errors="replace") as f:
+                for line in f:
+                    cur_line_no += 1
+                    total_lines += 1
+                    if cur_line_no <= start_idx:
+                        prior_chars += len(line)
+                        continue
+                    if end_idx > 0 and cur_line_no > end_idx:
+                        for _ in f:
+                            total_lines += 1
+                        break
+
+                    if cur_chars + len(line) > max_chars and len(slice_lines) > 0:
+                        hit_char_limit = True
+                        if auto_paginate:
+                            for _ in f:
+                                total_lines += 1
+                            break
+                        else:
+                            raise FileSizeLimitError(
+                                f"Selected lines in '{relative_path}' exceed max allowed limit of {max_chars} characters."
+                            )
+
+                    slice_lines.append(line)
+                    cur_chars += len(line)
+                    fit_count += 1
+        except FileSizeLimitError:
+            raise
+        except Exception as e_err:
+            raise FileServiceError(f"Failed to read file '{relative_path}' with encoding '{encoding}': {e_err}") from e_err
+
+        if (hit_char_limit or cur_chars > max_chars) and auto_paginate:
             fit_count = max(1, fit_count)
-            returned_end = s + fit_count
+            returned_end = start_idx + fit_count
             chunk_size = fit_count
             next_start = returned_end + 1
             next_end = min(total_lines, returned_end + chunk_size)
-            prior_chars = sum(len(l) for l in lines[:s])
             return {
                 "status": "success",
                 "project": project.name,
                 "relative_path": relative_path,
                 "encoding": encoding,
-                "content": "".join(slice_lines[:fit_count]),
+                "content": "".join(slice_lines),
                 "truncated": True,
                 "truncation_reason": "max_read_chars_limit_reached",
                 "total_file_lines": total_lines,
-                "returned_start_line": s + 1,
+                "returned_start_line": start_idx + 1,
                 "returned_end_line": returned_end,
                 "returned_chars": cur_chars,
                 "next_start_line": next_start,
@@ -350,7 +366,15 @@ def read_project_file(
                 "hint": f"File truncated due to size limit. Call read_file(project_id='{project.name}', relative_path='{relative_path}', start_line={next_start}, end_line={next_end}) to read the next segment.",
             }
 
-        return slice_content
+        return "".join(slice_lines)
+
+    try:
+        content = file_path.read_text(encoding=encoding, errors="replace")
+    except Exception as e:
+        raise FileServiceError(f"Failed to read file '{relative_path}' with encoding '{encoding}': {e}") from e
+
+    lines = content.splitlines(keepends=True)
+    total_lines = len(lines)
 
     # Character offset / limit slicing
     if offset > 0 or limit > 0:
@@ -366,10 +390,10 @@ def read_project_file(
         # Self-healing pagination on full file
         cur_chars = 0
         fit_count = 0
-        for l in lines:
-            if cur_chars + len(l) > max_chars and fit_count > 0:
+        for line_str in lines:
+            if cur_chars + len(line_str) > max_chars and fit_count > 0:
                 break
-            cur_chars += len(l)
+            cur_chars += len(line_str)
             fit_count += 1
         fit_count = max(1, fit_count)
         chunk_size = fit_count
@@ -468,7 +492,8 @@ def edit_project_file_snippet(
     if not search_text:
         raise FileServiceError("search_text cannot be empty.")
 
-    current_content = read_project_file(project, relative_path, encoding=encoding)
+    raw_content = read_project_file(project, relative_path, encoding=encoding, auto_paginate=False)
+    current_content = raw_content.get("content", "") if isinstance(raw_content, dict) else raw_content
 
     count = current_content.count(search_text)
     if count == 0:
@@ -646,7 +671,6 @@ def move_project_path(
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(src_resolved), str(dest))
 
-    src_root_res = source_project.root.resolve()
     tgt_root_res = target_project.root.resolve()
     try:
         final_tgt_rel = str(dest.resolve().relative_to(tgt_root_res)).replace("\\", "/")
@@ -672,7 +696,7 @@ def read_multiple_project_files(
 ) -> dict[str, Any]:
     """Read contents of multiple files in a single batch operation."""
     ensure_project_accessible(project)
-    results: dict[str, str] = {}
+    results: dict[str, Any] = {}
     errors: dict[str, str] = {}
     total_chars = 0
 
@@ -686,7 +710,7 @@ def read_multiple_project_files(
                 max_chars=max_chars_per_file,
             )
             results[clean_rel] = content
-            total_chars += len(content)
+            total_chars += len(content) if isinstance(content, str) else len(str(content.get("content", "")))
         except Exception as e:
             errors[clean_rel] = str(e)
 
@@ -708,14 +732,19 @@ def copy_project_path(
     overwrite: bool = False,
     recursive: bool = True,
     ignored_patterns: list[str] | None = None,
+    allow_copy: bool = True,
 ) -> dict[str, Any]:
     """Copy a file or directory within a project or across mapped projects.
 
     Guarantees:
+    - Verifies allow_copy permission switch.
     - Both source and target are strictly checked against project boundaries.
     - Rejects write if target project is configured as read_only.
     - Skips specified ignored patterns (e.g. .git, node_modules) during directory copy.
     """
+    if not allow_copy:
+        raise PermissionDeniedError("Cross-path or project copying is disabled by server configuration.")
+
     if target_project.read_only:
         raise ReadOnlyProjectError(
             f"Target project '{target_project.name}' is read-only. Copy operation rejected."
@@ -735,7 +764,6 @@ def copy_project_path(
             f"Source path '{source_relative_path}' does not exist in project '{source_project.name}'."
         )
 
-    ignored = ignored_patterns or []
     files_copied = 0
     dirs_copied = 0
     bytes_copied = 0

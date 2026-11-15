@@ -1,14 +1,13 @@
 """Unified GitIgnore engine supporting Git syntax across Level 1-3 rules, Model C switch, and HITL."""
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import fnmatch
 import json
 import os
-from pathlib import Path
 import re
-from typing import Any
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 
 from pathspec import GitIgnoreSpec
 
@@ -462,6 +461,7 @@ class ProjectIgnoreManager:
         self._cached_proj_config_source: IgnorePatternSource | None = None
         self._cached_global_key: tuple[str, ...] | None = None
         self._cached_global_source: IgnorePatternSource | None = None
+        self._dir_cache: dict[str, tuple[bool | None, str, str, str]] = {}
 
     def has_project_root_gitignore(self) -> bool:
         """Check if project root has a .gitignore file (including empty 0-byte file)."""
@@ -494,6 +494,7 @@ class ProjectIgnoreManager:
         cached = self._gitignore_cache.get(norm_base)
         if cached is not None:
             if cached.is_stale():
+                self._dir_cache.clear()
                 if gi_path.is_file():
                     cached.load()
                 else:
@@ -703,6 +704,12 @@ class ProjectIgnoreManager:
         if not norm_path or norm_path == ".":
             return IgnoreDecision(ignored=False, source="", pattern="", rule_file="")
 
+        # Check for any modified or new .gitignore files and invalidate directory cache
+        for cached_gi in list(self._gitignore_cache.values()):
+            if cached_gi.is_stale():
+                self._dir_cache.clear()
+                break
+
         basename = norm_path.rsplit("/", 1)[-1]
 
         # Step 2: Baseline system exclusions & sensitive credentials (NEVER bypassed)
@@ -736,9 +743,14 @@ class ProjectIgnoreManager:
                 if is_sensitive_path(ancestor) or is_sensitive_path(ans_base):
                     return IgnoreDecision(ignored=True, source="sensitive_rule", pattern=ans_base, rule_file="")
 
-                ans_verdict, ans_source, ans_pat, ans_rule_file = self._evaluate_path_candidate_rules(
-                    ancestor, is_dir=True
-                )
+                if ancestor in self._dir_cache:
+                    ans_verdict, ans_source, ans_pat, ans_rule_file = self._dir_cache[ancestor]
+                else:
+                    ans_verdict, ans_source, ans_pat, ans_rule_file = self._evaluate_path_candidate_rules(
+                        ancestor, is_dir=True
+                    )
+                    self._dir_cache[ancestor] = (ans_verdict, ans_source, ans_pat, ans_rule_file)
+
                 if ans_verdict is True:
                     return IgnoreDecision(
                         ignored=True,
@@ -748,7 +760,12 @@ class ProjectIgnoreManager:
                     )
 
         # Step 6: Evaluate target path itself
-        verdict, source, pattern, rule_file = self._evaluate_path_candidate_rules(norm_path, is_dir=is_dir)
+        if is_dir and norm_path in self._dir_cache:
+            verdict, source, pattern, rule_file = self._dir_cache[norm_path]
+        else:
+            verdict, source, pattern, rule_file = self._evaluate_path_candidate_rules(norm_path, is_dir=is_dir)
+            if is_dir:
+                self._dir_cache[norm_path] = (verdict, source, pattern, rule_file)
         if verdict is True:
             return IgnoreDecision(ignored=True, source=source, pattern=pattern, rule_file=rule_file)
         elif verdict is False:

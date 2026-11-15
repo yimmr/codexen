@@ -31,29 +31,29 @@ from .fs import (
     write_project_binary_file,
     write_project_file,
 )
-from .process_session import (
-    ProcessSession,
-    ProcessSessionManager,
-    global_process_manager,
-)
 from .git_ops import (
     get_project_git_diff,
     get_project_git_log,
     get_project_git_status,
 )
-from .search import (
-    search_project_code,
-)
 from .gitignore import (
-    BASELINE_SYSTEM_IGNORED,
     BASELINE_FALLBACK_IGNORED,
-    GitIgnoreRule,
+    BASELINE_SYSTEM_IGNORED,
     GitIgnoreFile,
+    GitIgnoreRule,
     ProjectIgnoreManager,
-    get_project_ignore_manager,
     clear_ignore_manager_cache,
+    get_project_ignore_manager,
     is_path_authorized,
     log_penetration_audit,
+)
+from .process_session import (
+    ProcessSession,
+    ProcessSessionManager,
+    global_process_manager,
+)
+from .search import (
+    search_project_code,
 )
 from .security import (
     CRITICAL_SENSITIVE_PATTERNS,

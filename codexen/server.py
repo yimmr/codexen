@@ -6,25 +6,28 @@ Lifecycle execution is delegated to the generic mcp_server_core.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from dotenv import load_dotenv
 
 try:
     from mcp.server.fastmcp import FastMCP
 except (ImportError, ModuleNotFoundError):
-    from mcp.server.mcpserver import MCPServer as FastMCP
+    from mcp.server.mcpserver import MCPServer as FastMCP  # type: ignore[no-redef]
 from mcp.server.transport_security import TransportSecuritySettings
-from starlette.applications import Starlette
-
 from mcp_server_core.env import get_runtime_dir
 from mcp_server_core.logging import set_global_payload_hook
 from mcp_server_core.oauth import LocalOAuthServer
 from mcp_server_core.server import (
     build_mcp_server_app,
+)
+from mcp_server_core.server import (
     serve_http as framework_serve_http,
+)
+from mcp_server_core.server import (
     serve_stdio as framework_serve_stdio,
 )
+from starlette.applications import Starlette
 
 from .config import ConfigManager
 from .exceptions import FileServiceError
@@ -138,15 +141,18 @@ def build_starlette_app(
             "auth_required": config_mgr.http_settings.require_auth,
         }
 
-    return build_mcp_server_app(
-        server=server,
-        env_cfg=config_mgr.http_settings,
-        oauth_server=oauth_server,
-        service_name=config_mgr.http_settings.service_name,
-        service_title=config_mgr.http_settings.service_title,
-        root_info_builder=root_info_builder,
-        require_auth=require_auth,
-        payload_hook=codexen_payload_hook,
+    return cast(
+        Starlette,
+        build_mcp_server_app(
+            server=server,
+            env_cfg=config_mgr.http_settings,
+            oauth_server=oauth_server,
+            service_name=config_mgr.http_settings.service_name,
+            service_title=config_mgr.http_settings.service_title,
+            root_info_builder=root_info_builder,
+            require_auth=require_auth,
+            payload_hook=codexen_payload_hook,
+        ),
     )
 
 

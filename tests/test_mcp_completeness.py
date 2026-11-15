@@ -234,7 +234,7 @@ class MCPCompletenessTests(unittest.TestCase):
 
     def test_mcp_gateway_single_content_block_serialization(self):
         """Verify FastMCP serializes list_files and list_projects as a SINGLE TextContent block.
-        
+
         This definitively resolves the MCP serialization truncation bug where intermediate
         gateways only returned the last TextContent element (e.g. tunnel_shared.py).
         """

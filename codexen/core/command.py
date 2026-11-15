@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import re
 import subprocess
 import time
+from pathlib import Path
 from typing import Any
 
 from ..config import ProjectConfig, ServiceSettings
@@ -134,9 +134,134 @@ def kill_process_tree(pid: int) -> None:
     else:
         try:
             import signal
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
+            killpg = getattr(os, "killpg", None)
+            getpgid = getattr(os, "getpgid", None)
+            sigkill = getattr(signal, "SIGKILL", getattr(signal, "SIGTERM", 15))
+            if killpg and getpgid:
+                killpg(getpgid(pid), sigkill)
+            else:
+                os.kill(pid, sigkill)
         except Exception:
             pass
+
+
+def split_chained_commands(command_str: str) -> list[str]:
+    """Split a shell command line by chaining operators (&, &&, |, ||, ;) respecting quotes
+    and stream redirections (e.g. 2>&1).
+    """
+    cmd = command_str.strip()
+    if not cmd:
+        return []
+
+    tokens: list[str] = []
+    current: list[str] = []
+    in_single_quote = False
+    in_double_quote = False
+    i = 0
+    n = len(cmd)
+
+    while i < n:
+        char = cmd[i]
+
+        # Handle quotes
+        if char == "'" and not in_double_quote:
+            in_single_quote = not in_single_quote
+            current.append(char)
+            i += 1
+            continue
+        if char == '"' and not in_single_quote:
+            in_double_quote = not in_double_quote
+            current.append(char)
+            i += 1
+            continue
+
+        # If inside quotes, nothing is a command separator
+        if in_single_quote or in_double_quote:
+            current.append(char)
+            i += 1
+            continue
+
+        # Check for stream redirection like 2>&1, >&1, 1>&2
+        if char == "&":
+            prev_chars = "".join(current).rstrip()
+            if prev_chars.endswith(">"):
+                # Part of redirection operator (e.g. >&1 or 2>&1)
+                current.append(char)
+                i += 1
+                continue
+
+            # Check if this '&' is the PowerShell invocation operator at the start of a command
+            if not "".join(current).strip():
+                if i + 1 < n and cmd[i + 1] == "&":
+                    pass  # '&&' at start, treat as separator
+                else:
+                    # Single '&' with empty prefix -> invocation operator like '& "python.exe"'
+                    current.append(char)
+                    i += 1
+                    continue
+
+            # Check for '&&'
+            if i + 1 < n and cmd[i + 1] == "&":
+                chunk = "".join(current).strip()
+                if chunk:
+                    tokens.append(chunk)
+                current = []
+                i += 2
+                continue
+            else:
+                # Single '&'
+                chunk = "".join(current).strip()
+                if chunk:
+                    tokens.append(chunk)
+                current = []
+                i += 1
+                continue
+
+        # Check for '||' or '|'
+        if char == "|":
+            if i + 1 < n and cmd[i + 1] == "|":
+                chunk = "".join(current).strip()
+                if chunk:
+                    tokens.append(chunk)
+                current = []
+                i += 2
+                continue
+            else:
+                chunk = "".join(current).strip()
+                if chunk:
+                    tokens.append(chunk)
+                current = []
+                i += 1
+                continue
+
+        # Check for ';'
+        if char == ";":
+            chunk = "".join(current).strip()
+            if chunk:
+                tokens.append(chunk)
+            current = []
+            i += 1
+            continue
+
+        current.append(char)
+        i += 1
+
+    last_chunk = "".join(current).strip()
+    if last_chunk:
+        tokens.append(last_chunk)
+
+    return tokens
+
+
+def extract_all_command_executables(command_str: str) -> list[tuple[str, str]]:
+    """Extract (clean_token, base_name) for EVERY chained sub-command in command_str."""
+    sub_commands = split_chained_commands(command_str)
+    results: list[tuple[str, str]] = []
+    for sub in sub_commands:
+        token, base = extract_command_executable(sub)
+        if token or base:
+            results.append((token, base))
+    return results
 
 
 def extract_command_executable(command_str: str) -> tuple[str, str]:
@@ -200,6 +325,8 @@ def check_command_security(
 ) -> tuple[str, str]:
     """Inspect terminal command against blacklists, confirmation rules, and whitelists.
 
+    Every sub-command in chained expressions (&, &&, |, ||, ;) is independently verified.
+
     Returns:
         (verdict, message) where verdict is "allow", "deny", or "needs_confirmation".
     """
@@ -220,45 +347,56 @@ def check_command_security(
             "Command attempts deletion of system drive or root-level absolute paths."
         )
 
+    # Split compound chained commands (&, &&, |, ||, ;)
+    sub_commands = split_chained_commands(command)
+    if not sub_commands:
+        sub_commands = [command]
+
     # 3. Confirmation required actions (e.g. git push, npm publish, del, rmdir)
-    safe_test = is_safe_test_command(command)
+    for sub in sub_commands:
+        sub_lower = sub.lower().strip()
+        safe_test = is_safe_test_command(sub)
 
-    for req_item in settings.command_require_confirmation:
-        item = req_item.lower().strip()
-        if not item:
+        for req_item in settings.command_require_confirmation:
+            item = req_item.lower().strip()
+            if not item:
+                continue
+
+            # If this is an offline test runner, bypass generic interpreter confirmation prompts
+            if item in ("python", "py", "node") and safe_test:
+                continue
+
+            pattern = r"(?:^|[\s;|&])" + re.escape(item) + r"(?:[\s;|&]|$)"
+            if re.search(pattern, sub_lower):
+                if not confirmed:
+                    return (
+                        "needs_confirmation",
+                        f"Command contains sensitive operation '{req_item}'. "
+                        f"Please prompt the user for explicit confirmation before proceeding.",
+                    )
+
+    # 4. Whitelist check for EVERY sub-command in the chain
+    whitelist_clean = {w.lower().removesuffix(".exe") for w in settings.command_whitelist}
+
+    for sub in sub_commands:
+        clean_token, base_name = extract_command_executable(sub)
+        if not clean_token and not base_name:
             continue
 
-        # If this is an offline test runner, bypass generic interpreter confirmation prompts
-        if item in ("python", "py", "node") and safe_test:
-            continue
+        safe_test = is_safe_test_command(sub)
+        is_whitelisted = (
+            base_name in whitelist_clean
+            or clean_token in whitelist_clean
+            or (safe_test and base_name in ("python", "py", "pytest", "node", "npm", "pnpm", "yarn", "cargo", "go"))
+        )
 
-        # Use token boundary pattern to avoid substring false positives (e.g. "py" in "pytest", "rm" in "format")
-        pattern = r"(?:^|[\s;|&])" + re.escape(item) + r"(?:[\s;|&]|$)"
-        if re.search(pattern, cmd_lower):
+        if not is_whitelisted:
             if not confirmed:
                 return (
                     "needs_confirmation",
-                    f"Command contains sensitive operation '{req_item}'. "
-                    f"Please prompt the user for explicit confirmation before proceeding.",
+                    f"Executable '{base_name or clean_token}' in chained command is not in the default development whitelist. "
+                    f"Please ask user for authorization to execute this command.",
                 )
-
-    # 4. Whitelist check for primary executable (handles paths like .venv/Scripts/python.exe)
-    clean_token, base_name = extract_command_executable(command)
-    whitelist_clean = {w.lower().removesuffix(".exe") for w in settings.command_whitelist}
-
-    is_whitelisted = (
-        base_name in whitelist_clean
-        or clean_token in whitelist_clean
-        or (safe_test and base_name in ("python", "py", "pytest", "node", "npm", "pnpm", "yarn", "cargo", "go"))
-    )
-
-    if not is_whitelisted:
-        if not confirmed:
-            return (
-                "needs_confirmation",
-                f"Executable '{base_name or clean_token}' is not in the default development whitelist. "
-                f"Please ask user for authorization to execute this command.",
-            )
 
     return "allow", ""
 

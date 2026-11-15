@@ -52,15 +52,15 @@ class AsyncProcessAndMultimodalTests(unittest.TestCase):
         self.config_file = Path(self.temp_dir) / "settings.yaml"
         self.config_file.write_text(f"""
 workspace:
-  root: "{str(self.workspace_dir).replace('\\', '/')}"
+  root: "{self.workspace_dir.as_posix()}"
   allow_create_project: true
 projects:
   test_proj:
-    root: "{str(self.proj_root).replace('\\', '/')}"
+    root: "{self.proj_root.as_posix()}"
     description: "Test Project"
     read_only: false
   ro_proj:
-    root: "{str(self.ro_proj_root).replace('\\', '/')}"
+    root: "{self.ro_proj_root.as_posix()}"
     description: "Read Only Project"
     read_only: true
 mcp:

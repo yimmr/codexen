@@ -52,6 +52,7 @@ bin/
 # Lockfiles & test cache
 uv.lock
 .pytest_cache/
-
-.pytest_cache
+.mypy_cache/
+.ruff_cache/
+.coverage
 

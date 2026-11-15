@@ -1,27 +1,27 @@
 """ZIP archive creation and safe extraction with Zip-Slip / Zip-Bomb defenses."""
 from __future__ import annotations
 
-from datetime import datetime
 import os
-from pathlib import Path
 import re
 import shutil
 import zipfile
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from ..config import ProjectConfig
 from ..exceptions import (
     FileServiceError,
     FileSizeLimitError,
+    PermissionDeniedError,
     ReadOnlyProjectError,
     ZipSlipSecurityError,
 )
-from .fs import matches_any_pattern, utc_iso_now
+from .fs import utc_iso_now
 from .gitignore import get_project_ignore_manager
 from .security import (
     assert_not_sensitive_path,
     ensure_project_accessible,
-    is_sensitive_path,
     safe_resolve_path,
 )
 
@@ -31,8 +31,17 @@ def create_project_zip(
     source_subpath: str = "",
     output_zip_name: str = "",
     ignored_patterns: list[str] | None = None,
+    allow_zip: bool = True,
 ) -> dict[str, Any]:
     """Create a ZIP archive of a project or subfolder, excluding ignored patterns."""
+    if not allow_zip:
+        raise PermissionDeniedError("ZIP archive packaging is disabled by server configuration.")
+
+    if project.read_only:
+        raise ReadOnlyProjectError(
+            f"Project '{project.name}' is configured as read-only. Generating archive files inside its root is prohibited."
+        )
+
     ensure_project_accessible(project)
     src_target = safe_resolve_path(project.root, source_subpath)
 
@@ -105,8 +114,12 @@ def extract_project_zip(
     target_subpath: str = "",
     overwrite: bool = True,
     max_size_bytes: int = 100 * 1024 * 1024,
+    allow_zip: bool = True,
 ) -> dict[str, Any]:
     """Extract a ZIP archive with strict Zip-Slip and Zip-Bomb defenses."""
+    if not allow_zip:
+        raise PermissionDeniedError("ZIP archive extraction is disabled by server configuration.")
+
     if project.read_only:
         raise ReadOnlyProjectError(
             f"Project '{project.name}' is read-only. Cannot extract archive."

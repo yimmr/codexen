@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import re
 import time
+from pathlib import Path
 from typing import Any
 
 from ..config import ProjectConfig
 from ..exceptions import FileServiceError
-from .fs import is_binary_file, matches_any_pattern
+from .fs import is_binary_file
 from .gitignore import get_project_ignore_manager, is_path_authorized, log_penetration_audit
 from .security import (
     assert_not_sensitive_path,
@@ -263,7 +263,7 @@ def search_project_code(
             files_scanned += 1
 
             try:
-                with open(file_path, "r", encoding="utf-8", errors="replace") as fh:
+                with open(file_path, encoding="utf-8", errors="replace") as fh:
                     for line_num, line in enumerate(fh, start=1):
                         if line_num % 1000 == 0 and (time.monotonic() - start_time) > timeout_seconds:
                             timed_out = True

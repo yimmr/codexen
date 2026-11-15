@@ -6,15 +6,14 @@ send interactive input, and manage process lifecycles without timing out HTTP re
 """
 from __future__ import annotations
 
-from collections import deque
-from datetime import datetime, timezone
 import os
-from pathlib import Path
 import subprocess
 import threading
-import time
-from typing import Any
 import uuid
+from collections import deque
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
 
 from ..config import ProjectConfig, ServiceSettings
 from ..exceptions import (

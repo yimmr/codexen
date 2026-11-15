@@ -3,23 +3,35 @@ from __future__ import annotations
 
 import os
 import re
-import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-import yaml
 
+import yaml
 from mcp_server_core.env import (
     DeploymentEnvConfig,
     get_runtime_dir,
     update_env_variable,
 )
 from mcp_server_core.logging import LoggingConfig
-from .exceptions import ConfigurationError
 
+from .exceptions import ConfigurationError
 
 # Backward-compatibility alias
 HttpSettings = DeploymentEnvConfig
+
+__all__ = [
+    "ConfigManager",
+    "ConfigurationError",
+    "DeploymentEnvConfig",
+    "HttpSettings",
+    "LoggingConfig",
+    "ProjectConfig",
+    "ServiceSettings",
+    "get_runtime_dir",
+    "normalize_ignored_patterns",
+    "update_env_variable",
+]
 
 
 def normalize_ignored_patterns(raw: Any) -> list[str]:
@@ -32,7 +44,7 @@ def normalize_ignored_patterns(raw: Any) -> list[str]:
         result: list[str] = []
         for entry in raw:
             if isinstance(entry, str) and "\n" in entry:
-                result.extend([l.rstrip("\r\n") for l in entry.splitlines() if l.rstrip("\r\n").strip()])
+                result.extend([item.rstrip("\r\n") for item in entry.splitlines() if item.rstrip("\r\n").strip()])
             elif entry is not None:
                 s = str(entry).rstrip("\r\n")
                 if s.strip():
@@ -111,6 +123,7 @@ class ServiceSettings:
             "git clean", "npm publish", "pip install --upgrade",
         ]
     )
+    custom_sensitive_patterns: list[str] = field(default_factory=list)
     ignored_patterns: list[str] = field(
         default_factory=lambda: [
             ".git",
@@ -271,6 +284,11 @@ class ConfigManager:
             command_require_confirmation=list(
                 merged_settings.get("command_require_confirmation", self.settings.command_require_confirmation)
             ),
+            custom_sensitive_patterns=list(
+                raw_data.get("security", {}).get("custom_sensitive_patterns")
+                if isinstance(raw_data.get("security"), dict)
+                else merged_settings.get("custom_sensitive_patterns", [])
+            ),
             ignored_patterns=normalize_ignored_patterns(
                 merged_settings.get("ignored_patterns", self.settings.ignored_patterns)
             ),
@@ -296,7 +314,7 @@ class ConfigManager:
         if raw_projects is None:
             raw_projects = {}
         elif not isinstance(raw_projects, dict):
-            raise ConfigurationError(f"'projects' in configuration must be a mapping of project_name -> details")
+            raise ConfigurationError("'projects' in configuration must be a mapping of project_name -> details")
 
         new_projects: dict[str, ProjectConfig] = {}
         for name, item in raw_projects.items():
@@ -342,15 +360,15 @@ class ConfigManager:
         return self
 
     @property
-    def server(self) -> HttpSettings:
+    def server(self) -> DeploymentEnvConfig:
         return self.http_settings
 
     @property
-    def security(self) -> HttpSettings:
+    def security(self) -> DeploymentEnvConfig:
         return self.http_settings
 
     @property
-    def tunnel(self) -> HttpSettings:
+    def tunnel(self) -> DeploymentEnvConfig:
         return self.http_settings
 
     def reload(self) -> dict[str, Any]:
@@ -411,7 +429,7 @@ class ConfigManager:
             or target_dir in codexen_real_root.parents
         ):
             raise ConfigurationError(
-                f"Security boundary violation: Cannot create project overlapping with Codexen engine directory."
+                "Security boundary violation: Cannot create project overlapping with Codexen engine directory."
             )
         target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -426,7 +444,7 @@ class ConfigManager:
         if persist and self.config_path.exists():
             try:
                 self._persist_project_to_yaml(new_proj)
-            except Exception as e:
+            except Exception:
                 # Log or tolerate persistence error if in-memory registration succeeded
                 pass
 

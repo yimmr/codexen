@@ -106,7 +106,7 @@ def test_i2_config_yaml_and_env_override():
         ws_path.mkdir(parents=True, exist_ok=True)
         yaml_content = f"""
 workspace:
-  root: "{str(ws_path).replace('\\', '/')}"
+  root: "{ws_path.as_posix()}"
 projects: {{}}
 permissions: {{}}
 logging:
@@ -260,7 +260,7 @@ async def _run_async_i3_and_i4():
                     )
                     assert res_call1.status_code == 200
                     assert "Hello from Codexen live transport!" in res_call1.text
-                    print(f"  [PASS] Successful tool call response verified with data")
+                    print("  [PASS] Successful tool call response verified with data")
 
                     # 4. Error tool call with ray-err-FAILURE (I-4)
                     print("\n" + "=" * 60)
@@ -312,14 +312,14 @@ async def _run_async_i3_and_i4():
             assert f"[trace_id: {ray_a}]" in access_txt
             assert f"[trace_id: {ray_a}]" in app_txt
             assert "Tool started: read_file" in app_txt or "Tool execution started: read_file" in app_txt
-            print(f"  => I-3 VERIFICATION SUCCESSFUL: CF-Ray propagated across access and service logs.")
+            print("  => I-3 VERIFICATION SUCCESSFUL: CF-Ray propagated across access and service logs.")
 
             # Verify I-4 assertions
             assert f"[trace_id: {ray_err}]" in access_txt
             assert f"[trace_id: {ray_err}]" in error_txt
             assert "missing_file.txt" in error_txt
             assert "Traceback" in error_txt or "Tool execution failed" in error_txt
-            print(f"  => I-4 VERIFICATION SUCCESSFUL: Error log contains exact CF-Ray trace_id and full stacktrace.")
+            print("  => I-4 VERIFICATION SUCCESSFUL: Error log contains exact CF-Ray trace_id and full stacktrace.")
 
         finally:
             log_mgr.close()
@@ -345,7 +345,7 @@ def test_i5_zero_global_os_pollution():
     if polluted:
         print(f"  [WARN] Note existing logs in external directories: {polluted}")
     else:
-        print(f"  [PASS] Checked LocalAppData and User Home: No stray log files detected.")
+        print("  [PASS] Checked LocalAppData and User Home: No stray log files detected.")
         
     # Verify strict containment enforcement
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -356,11 +356,11 @@ def test_i5_zero_global_os_pollution():
         try:
             cfg = LoggingConfig(log_dir="../outside_escape", allow_outside_base=False)
             cfg.resolve_log_dir(base_dir=base_dir)
-            assert False, "Should have raised ValueError on containment violation"
+            raise AssertionError("Should have raised ValueError on containment violation")
         except ValueError as e:
             print(f"  [PASS] Containment guard blocked path escape: {e}")
             
-    print(f"\n  => I-5 VERIFICATION SUCCESSFUL: Strict containment guard enforced; zero unwanted host pollution.")
+    print("\n  => I-5 VERIFICATION SUCCESSFUL: Strict containment guard enforced; zero unwanted host pollution.")
 
 
 if __name__ == "__main__":

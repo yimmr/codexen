@@ -1,9 +1,9 @@
 """Security boundaries, path resolution, and sensitive file isolation."""
 from __future__ import annotations
 
-import fnmatch
-from pathlib import Path
+import os
 import re
+from pathlib import Path
 
 from ..config import ProjectConfig
 from ..exceptions import (
@@ -26,6 +26,19 @@ CRITICAL_SENSITIVE_PATTERNS = [
     r".*\.p12$",
     r"^id_(rsa|dsa|ecdsa|ed25519)($|\..*)",
     r"(^|.*/)oauth_store\.db$",
+    # Cloud credentials & developer deployment tokens
+    r"(^|.*/)\.aws/(credentials|config)$",
+    r"(^|.*/)gcloud/.*\.json$",
+    r"(^|.*/)wrangler\.toml$",
+    # Package manager tokens and registry configs
+    r"(^|.*/)\.npmrc$",
+    r"(^|.*/)\.pypirc$",
+    r"(^|.*/)\.docker/config\.json$",
+    r"(^|.*/)\.cargo/credentials(\.toml)?$",
+    # Local secrets and master keys
+    r"(^|.*/)master\.key$",
+    r".*\.kdbx$",
+    r"(^|.*/)secrets\.(ya?ml|json)$",
     # Version control internal metadata (prevents corruption of .git database via raw writes)
     r"^\.git($|/.*|\\.*)",
     r"^\.svn($|/.*|\\.*)",
@@ -59,9 +72,10 @@ def safe_resolve_path(root: Path, relative_path: str) -> Path:
     - Rejects path traversal attempts (e.g. '..', 'dir/../../etc')
     - Rejects absolute paths, UNC network paths, Windows drive prefixes, and leading slashes (e.g. 'C:', '\\server', '/etc')
     - Rejects Windows reserved device names (CON, NUL, PRN, etc.)
+    - Canonicalizes paths (os.path.realpath) to neutralize Windows 8.3 short filename alias bypasses
     - Ensures the final resolved path is either the root directory itself or strictly inside it.
     """
-    root_resolved = root.resolve()
+    root_resolved = Path(os.path.realpath(root)).resolve()
 
     if not relative_path or relative_path.strip() in ("", "."):
         return root_resolved
@@ -88,24 +102,39 @@ def safe_resolve_path(root: Path, relative_path: str) -> Path:
 
     # Resolve combined path
     candidate = (root_resolved / Path(*segments)).resolve()
+    # Resolve realpath if file/dir already exists on filesystem to fold 8.3 aliases and symlinks
+    if candidate.exists():
+        candidate_real = Path(os.path.realpath(candidate)).resolve()
+    else:
+        # For non-existent candidate, resolve its nearest existing parent with realpath
+        curr = candidate
+        tail_parts: list[str] = []
+        while not curr.exists() and curr != curr.parent:
+            tail_parts.append(curr.name)
+            curr = curr.parent
+        if curr.exists():
+            curr_real = Path(os.path.realpath(curr)).resolve()
+            candidate_real = (curr_real / Path(*reversed(tail_parts))).resolve()
+        else:
+            candidate_real = candidate
 
     # Enforce boundary check
-    if candidate != root_resolved and root_resolved not in candidate.parents:
+    if candidate_real != root_resolved and root_resolved not in candidate_real.parents:
         raise PathSecurityError(
             f"Security violation: path '{relative_path}' escapes project root boundary."
         )
 
     # Engine self-isolation: reject any access touching the Codexen tool directory
-    codexen_root = Path(__file__).resolve().parents[2].resolve()
-    if candidate == codexen_root or codexen_root in candidate.parents:
+    codexen_root = Path(os.path.realpath(Path(__file__).resolve().parents[2])).resolve()
+    if candidate_real == codexen_root or codexen_root in candidate_real.parents:
         raise PathSecurityError(
             "Security violation: access to Codexen engine directory is strictly prohibited."
         )
 
-    return candidate
+    return candidate_real
 
 
-def is_sensitive_path(relative_path: str) -> bool:
+def is_sensitive_path(relative_path: str, custom_patterns: list[str] | None = None) -> bool:
     """Check if relative path matches critical sensitive/secret files."""
     if not relative_path:
         return False
@@ -132,15 +161,21 @@ def is_sensitive_path(relative_path: str) -> bool:
     if name_is_template:
         return False
 
-    for pattern in CRITICAL_SENSITIVE_PATTERNS:
+    all_patterns = list(CRITICAL_SENSITIVE_PATTERNS)
+    if custom_patterns:
+        all_patterns.extend(custom_patterns)
+
+    for pattern in all_patterns:
         if re.search(pattern, cleaned, re.IGNORECASE) or re.search(pattern, name, re.IGNORECASE):
             return True
     return False
 
 
-def assert_not_sensitive_path(relative_path: str, action: str = "access") -> None:
+def assert_not_sensitive_path(
+    relative_path: str, action: str = "access", custom_patterns: list[str] | None = None
+) -> None:
     """Enforce strict blockage of sensitive/secret files across all file operations."""
-    if is_sensitive_path(relative_path):
+    if is_sensitive_path(relative_path, custom_patterns=custom_patterns):
         raise PathSecurityError(
             f"Security violation: {action} is forbidden on protected sensitive file/directory '{relative_path}'."
         )

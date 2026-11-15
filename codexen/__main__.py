@@ -15,8 +15,9 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from .server import codexen_payload_hook, config_manager, mcp
 from mcp_server_core.server import run_mcp_server
+
+from .server import codexen_payload_hook, config_manager, mcp
 
 
 def build_root_info(request: Any) -> dict[str, Any]:
@@ -43,10 +44,11 @@ def build_root_info(request: Any) -> dict[str, Any]:
 
 def main() -> None:
     """Run Codexen MCP service through the generic framework runner."""
-    banner_items_builder = lambda: [
-        (p.name, f"{'[RO]' if p.read_only else '[RW]'} -> {p.root}")
-        for p in config_manager.projects.values()
-    ]
+    def banner_items_builder() -> list[tuple[str, str]]:
+        return [
+            (p.name, f"{'[RO]' if p.read_only else '[RW]'} -> {p.root}")
+            for p in config_manager.projects.values()
+        ]
 
     try:
         run_mcp_server(
@@ -56,6 +58,7 @@ def main() -> None:
             root_info_builder=build_root_info,
             env_cfg=config_manager.http_settings,
             payload_hook=codexen_payload_hook,
+            logging_config=config_manager.logging_config,
         )
     except (KeyboardInterrupt, SystemExit):
         pass

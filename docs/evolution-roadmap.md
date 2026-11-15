@@ -158,7 +158,7 @@ flowchart LR
 ### 验收与验证标准
 * [x] 工具执行耗时打点精度达微秒级，异常输出包含完整调用栈与 `trace_id`；
 * [x] 敏感配置与 Authorization 标头脱敏率 100%，正常业务鉴权白名单参数（`authorized_paths`）精准放行；
-* [x] 172 项全量自动化测试套件通过率 100%（新增 `test_logging_observability.py` 覆盖真实 Streamable HTTP 传输层 CF-Ray 穿透、客户端报错 Trace 注入与配置注入；双仓累计 312 项测试全量通过）。
+* [x] 174 项全量自动化测试套件通过率 100%（新增 `test_logging_observability.py` 与 `test_command_security_unit.py` 覆盖真实 Streamable HTTP 传输层 CF-Ray 穿透、命令防穿透与模块化工具矩阵；双仓累计 314 项测试全量通过）。
 
 ---
 
@@ -169,4 +169,4 @@ flowchart LR
 - [x] **Phase 2 动态 `.gitignore` 模块开发与单测覆盖**；
 - [x] **Phase 3 HITL 穿透授权协议接入与前端/控制台联动**；
 - [x] **Phase 4 防截断自愈与 `search_audit` 遥测全量上线**；
-- [x] **Phase 5 双层全链路可观测性、日志轮转与 172 项全量单测通过 (双仓累计 312 项单测全绿)**。
+- [x] **Phase 5 双层全链路可观测性、日志轮转与 174 项全量单测通过 (双仓累计 314 项单测全绿)**。

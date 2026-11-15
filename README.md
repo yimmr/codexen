@@ -198,11 +198,11 @@ uv run --frozen python -m unittest discover tests -v
 
 执行结果：
 ```text
-Ran 172 tests in 119.318s
+Ran 174 tests in 16.58s
 
 OK (skipped=1)
 ```
-**172 项自动化与端到端集成测试全量通过（配合底层 mcp-server-core 140 项测试，双仓共 312 项测试无缝通过）！**
+**174 项自动化与端到端集成测试全量通过（配合底层 mcp-server-core 140 项测试，双仓共 314 项测试无缝通过）！**
 
 ---
 
