@@ -226,9 +226,9 @@ curl -s http://127.0.0.1:8788/health
 curl -s https://codexen.yourdomain.com/health
 # 期望返回: {"status":"healthy"}
 
-# 3. 运行全量自动化测试基线 (106 项测试)
+# 3. 运行全量自动化测试基线 (136 项测试)
 uv run python -m unittest discover tests -v
-# 期望返回: Ran 106 tests ... OK
+# 期望返回: Ran 136 tests ... OK
 ```
 
 ---

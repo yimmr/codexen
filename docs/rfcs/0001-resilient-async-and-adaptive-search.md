@@ -9,7 +9,7 @@
 | **提出日期** | 2026-11-15 |
 | **当前状态** | **Accepted / Living** |
 | **适用版本** | Codexen >= 0.2.0 |
-| **关联文件** | `codexen/core/search.py`, `codexen/core/fs.py`, `codexen/tools/__init__.py`, `codexen/config.py` |
+| **关联文件** | `codexen/core/search.py`, `codexen/core/fs.py`, `codexen/core/gitignore.py`, `codexen/core/archive.py`, `codexen/tools/__init__.py`, `codexen/config.py` |
 
 ---
 
@@ -288,7 +288,16 @@ flowchart LR
   - [x] 工具执行全面异步入池，事件循环饿死防御完毕；
   - [x] `search_code` 基础大文件与 `DEFAULT_SEARCH_IGNORED` 基线构建目录修剪完毕；
   - [x] 46 个工具 Schema 严格归一化（0 `anyOf` / `null` 歧义）；
-  - [x] 110 项全量自动化测试 100% 绿灯通过。
-* [ ] **Phase 2（动态规则与项目优先）**：见 `docs/evolution-roadmap.md`。
-* [ ] **Phase 3（HITL 穿透协议）**：见 `docs/evolution-roadmap.md`。
-* [ ] **Phase 4（防幻觉遥测与分页自愈）**：见 `docs/evolution-roadmap.md`。
+  - [x] 全量自动化测试 100% 绿灯通过。
+* [x] **Phase 2（动态规则与项目自决）**：
+  - [x] 零外部依赖动态 `.gitignore` 引擎实现，支持否定排除（`!`）、通配符与根/子目录继承；
+  - [x] 四级规则流水线落地：项目自身 `.gitignore` 拥有最高权威，全局配置严格纯兜底；
+  - [x] `.gitignore` 文件修改基于 `mtime` 秒级热重载与缓存自愈。
+* [x] **Phase 3（HITL 穿透协议与遥测审计）**：
+  - [x] 拦截未经授权的被忽略目录穿透尝试，返回标准 `needs_confirmation` 结构体；
+  - [x] 完整支持 `confirmed=True` 与 `authorized_paths` 局部白名单放行；
+  - [x] 穿透操作在 `.runtime/audit.log` 中记录审计轨迹，Level 4 核心凭证与内部版本库硬阻断。
+* [x] **Phase 4（防幻觉遥测与分页自愈）**：
+  - [x] `search_code` 返回结构化 `search_audit`（大文件跳过、超长行截断计数、修剪目录）；
+  - [x] `read_file` 截断时提供 `next_start_line` 与即用型自愈调用 `hint`；
+  - [x] `search_code` 匹配行提供 `line_truncated` 与 `line_full_length`，支持 `max_file_size_mb` 动态安全调优。

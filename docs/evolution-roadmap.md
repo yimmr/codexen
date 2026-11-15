@@ -9,10 +9,10 @@
 
 ```mermaid
 flowchart LR
-    Phase1["Phase 1: 运行时弹性与 Schema 规范<br/>(已交付 / 现网验证)"]
-    Phase2["Phase 2: 动态规则与项目自决<br/>(实施中)"]
-    Phase3["Phase 3: 人机协同穿透授权 (HITL)<br/>(规划中)"]
-    Phase4["Phase 4: 防幻觉态势感知与分页自愈<br/>(规划中)"]
+    Phase1["Phase 1: 运行时弹性与 Schema 规范<br/>(✅ 已交付 / 现网验证)"]
+    Phase2["Phase 2: 动态规则与项目自决<br/>(✅ 已交付 / 现网验证)"]
+    Phase3["Phase 3: 人机协同穿透授权 (HITL)<br/>(✅ 已交付 / 现网验证)"]
+    Phase4["Phase 4: 防幻觉态势感知与分页自愈<br/>(✅ 已交付 / 现网验证)"]
 
     Phase1 --> Phase2 --> Phase3 --> Phase4
 ```
@@ -22,7 +22,7 @@ flowchart LR
 | **Phase 1** | **运行时弹性与 Schema 规范** | 异步非阻塞执行线程池、构建目录修剪、0 `anyOf` Schema 严格清洗 | **✅ 已交付** | v0.2.1 |
 | **Phase 2** | **动态规则与项目自决** | 动态 `.gitignore` 引擎、项目规则最高权威、`permissions` 严格纯兜底 | **✅ 已交付** | v0.2.2 |
 | **Phase 3** | **人机协同穿透授权 (HITL)** | `needs_confirmation` 协议、`authorized_paths` 局部/通配白名单 | **✅ 已交付** | v0.2.3 |
-| **Phase 4** | **防幻觉态势感知与分页自愈** | `search_audit` 遥测审计、`read_file` 结构化截断元数据与自愈 `hint` | **📋 规划中** | v0.2.4 |
+| **Phase 4** | **防幻觉态势感知与分页自愈** | `search_audit` 遥测审计、`read_file` 结构化截断元数据与自愈 `hint` | **✅ 已交付** | v0.2.4 |
 
 ---
 

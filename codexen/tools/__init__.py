@@ -200,12 +200,28 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             confirmed=confirmed,
             authorized_paths=authorized_paths,
         )
+        if len(items) == 1 and isinstance(items[0], dict) and items[0].get("status") == "needs_confirmation":
+            return items[0]
+
+        is_truncated = len(items) >= config_mgr.settings.max_list_entries
+        extra_meta: dict[str, Any] = {
+            "truncated": is_truncated,
+            "limit_reached": is_truncated,
+            "max_entries": config_mgr.settings.max_list_entries,
+        }
+        if is_truncated:
+            extra_meta["hint"] = (
+                f"Directory listing reached maximum limit ({len(items)} entries). "
+                f"Use 'subpath', 'pattern', or 'extension' to narrow the scope."
+            )
+
         return ToolResultListDict(
             items,
             key="files",
             project_id=proj.name,
             subpath=target_subpath,
             recursive=recursive,
+            **extra_meta,
         )
 
     @_register_tool()

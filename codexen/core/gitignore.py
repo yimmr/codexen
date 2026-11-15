@@ -223,18 +223,25 @@ class GitIgnoreFile:
             anchored=anchored,
         )
 
-    def evaluate(self, rel_path: str, is_dir: bool = False) -> bool | None:
-        """Evaluate path against all rules in order. Return True=ignored, False=negated, None=no match."""
+    def evaluate_rule(self, rel_path: str, is_dir: bool = False) -> tuple[bool | None, GitIgnoreRule | None]:
+        """Evaluate path against all rules in order. Return (last_match, last_rule)."""
         norm_path = rel_path.replace("\\", "/").strip("/")
         if self.base_dir:
             if not (norm_path == self.base_dir or norm_path.startswith(self.base_dir + "/")):
-                return None
+                return None, None
 
         last_match: bool | None = None
+        last_rule: GitIgnoreRule | None = None
         for rule in self.rules:
             if rule.matches(norm_path, is_dir=is_dir):
                 last_match = not rule.is_negation
-        return last_match
+                last_rule = rule
+        return last_match, last_rule
+
+    def evaluate(self, rel_path: str, is_dir: bool = False) -> bool | None:
+        """Evaluate path against all rules in order. Return True=ignored, False=negated, None=no match."""
+        res, _ = self.evaluate_rule(rel_path, is_dir=is_dir)
+        return res
 
 
 def is_path_authorized(rel_path: str, authorized_paths: list[str] | None) -> bool:
@@ -269,6 +276,20 @@ def is_path_authorized(rel_path: str, authorized_paths: list[str] | None) -> boo
     return False
 
 
+_CUSTOM_AUDIT_BASE_DIR: Path | None = None
+
+
+def set_audit_base_dir(base_dir: Path | None) -> None:
+    """Override base directory for penetration audit logging (used by tests to prevent production log pollution)."""
+    global _CUSTOM_AUDIT_BASE_DIR
+    _CUSTOM_AUDIT_BASE_DIR = base_dir
+
+
+def get_audit_base_dir() -> Path | None:
+    """Get the current audit base directory override."""
+    return _CUSTOM_AUDIT_BASE_DIR
+
+
 def log_penetration_audit(
     project_name: str,
     requested_path: str,
@@ -284,7 +305,9 @@ def log_penetration_audit(
     try:
         from mcp_server_core.env import get_runtime_dir
 
-        runtime_dir = get_runtime_dir(base_dir)
+        target_base = base_dir or _CUSTOM_AUDIT_BASE_DIR
+        runtime_dir = get_runtime_dir(target_base)
+        runtime_dir.mkdir(parents=True, exist_ok=True)
         audit_file = runtime_dir / "audit.log"
         entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -350,8 +373,11 @@ class ProjectIgnoreManager:
 
         return None
 
-    def evaluate_gitignore(self, rel_path: str, is_dir: bool = False) -> bool | None:
-        """Evaluate path against applicable .gitignore files from deepest subfolder up to root."""
+    def evaluate_gitignore_with_rule(self, rel_path: str, is_dir: bool = False) -> tuple[bool | None, GitIgnoreRule | None]:
+        """Evaluate path against applicable .gitignore files from deepest subfolder up to root.
+
+        Returns (match_result, matching_rule).
+        """
         norm_path = rel_path.replace("\\", "/").strip("/")
         parts = norm_path.split("/") if norm_path else []
 
@@ -367,11 +393,93 @@ class ProjectIgnoreManager:
         for bdir in candidate_dirs:
             gi_file = self.get_or_load_gitignore(bdir)
             if gi_file is not None:
-                res = gi_file.evaluate(norm_path, is_dir=is_dir)
+                res, rule = gi_file.evaluate_rule(norm_path, is_dir=is_dir)
                 if res is not None:
-                    return res
+                    return res, rule
 
-        return None
+        return None, None
+
+    def evaluate_gitignore(self, rel_path: str, is_dir: bool = False) -> bool | None:
+        """Evaluate path against applicable .gitignore files from deepest subfolder up to root."""
+        res, _ = self.evaluate_gitignore_with_rule(rel_path, is_dir=is_dir)
+        return res
+
+    def explain_ignored(
+        self,
+        rel_path: str,
+        is_dir: bool = False,
+        caller_ignored: list[str] | None = None,
+        check_parents: bool = True,
+        authorized_paths: list[str] | None = None,
+    ) -> tuple[bool, str, str]:
+        """Determine whether rel_path should be ignored and return (is_ignored, rule_source, matched_pattern)."""
+        norm_path = rel_path.replace("\\", "/").strip("/")
+        if not norm_path or norm_path == ".":
+            return False, "", ""
+
+        basename = norm_path.rsplit("/", 1)[-1]
+
+        # Level 4: Baseline system exclusions & sensitive credentials (NEVER bypassed)
+        for part in norm_path.split("/"):
+            if part in BASELINE_SYSTEM_IGNORED:
+                return True, "baseline_system", part
+        if is_sensitive_path(norm_path) or is_sensitive_path(basename):
+            return True, "sensitive_rule", basename
+
+        # Caller-specified patterns (explicitly passed by user/agent)
+        if caller_ignored:
+            for p in caller_ignored:
+                if fnmatch.fnmatch(basename, p) or fnmatch.fnmatch(norm_path, p):
+                    return True, "caller_rule", p
+
+        # Human-in-the-loop (HITL) Penetration Authorization
+        if authorized_paths and is_path_authorized(norm_path, authorized_paths):
+            return False, "authorized_whitelist", ""
+
+        # Level 1: Project .gitignore (supports both root and sub-directory .gitignore files)
+        # 1.1 Check ancestor directories if check_parents=True
+        if check_parents and "/" in norm_path:
+            parts = norm_path.split("/")
+            for i in range(1, len(parts)):
+                ancestor = "/".join(parts[:i])
+                ans_res, ans_rule = self.evaluate_gitignore_with_rule(ancestor, is_dir=True)
+                if ans_res is True:
+                    pattern_str = (ans_rule.raw_pattern + "/") if ans_rule and ans_rule.dir_only else (ans_rule.raw_pattern if ans_rule else ancestor)
+                    return True, "project_gitignore", pattern_str
+
+        # 1.2 Check norm_path directly
+        gi_res, gi_rule = self.evaluate_gitignore_with_rule(norm_path, is_dir=is_dir)
+        if gi_res is True:
+            pattern_str = (gi_rule.raw_pattern + "/") if gi_rule and gi_rule.dir_only else (gi_rule.raw_pattern if gi_rule else norm_path)
+            return True, "project_gitignore", pattern_str
+        elif gi_res is False:
+            # Explicit negation (!pattern) in .gitignore
+            pattern_str = gi_rule.raw_pattern if gi_rule else norm_path
+            return False, "project_gitignore", f"!{pattern_str}"
+
+        # If project has a root .gitignore, Level 3 (Global fallback) is strictly bypassed
+        if self.has_project_gitignore():
+            # Level 2: Project-specific ignored_patterns in config.yaml
+            proj_patterns = getattr(self.project, "ignored_patterns", None) or []
+            for p in proj_patterns:
+                if fnmatch.fnmatch(basename, p) or fnmatch.fnmatch(norm_path, p):
+                    return True, "project_config", p
+            return False, "", ""
+
+        # Fallback when project has NO root .gitignore:
+        # Level 2: Project-specific ignored_patterns
+        proj_patterns = getattr(self.project, "ignored_patterns", None) or []
+        for p in proj_patterns:
+            if fnmatch.fnmatch(basename, p) or fnmatch.fnmatch(norm_path, p):
+                return True, "project_config", p
+
+        # Level 3: Global fallback
+        effective_fallback = self.fallback_ignored_patterns or BASELINE_FALLBACK_IGNORED
+        for p in effective_fallback:
+            if fnmatch.fnmatch(basename, p) or fnmatch.fnmatch(norm_path, p):
+                return True, "global_fallback", p
+
+        return False, "", ""
 
     def is_ignored(
         self,
@@ -382,73 +490,14 @@ class ProjectIgnoreManager:
         authorized_paths: list[str] | None = None,
     ) -> bool:
         """Determine whether rel_path should be ignored according to RFC 0001 rules."""
-        norm_path = rel_path.replace("\\", "/").strip("/")
-        if not norm_path or norm_path == ".":
-            return False
-
-        basename = norm_path.rsplit("/", 1)[-1]
-
-        # Level 4: Baseline system exclusions & sensitive credentials (NEVER bypassed)
-        if any(part in BASELINE_SYSTEM_IGNORED for part in norm_path.split("/")):
-            return True
-        if is_sensitive_path(norm_path) or is_sensitive_path(basename):
-            return True
-
-        # Caller-specified patterns (explicitly passed by user/agent)
-        if caller_ignored:
-            if any(fnmatch.fnmatch(basename, p) or fnmatch.fnmatch(norm_path, p) for p in caller_ignored):
-                return True
-
-        # Human-in-the-loop (HITL) Penetration Authorization
-        if authorized_paths and is_path_authorized(norm_path, authorized_paths):
-            return False
-
-        # Level 1: Project .gitignore
-        if self.has_project_gitignore():
-            # Check ancestor directories if check_parents=True
-            if check_parents and "/" in norm_path:
-                parts = norm_path.split("/")
-                for i in range(1, len(parts)):
-                    ancestor = "/".join(parts[:i])
-                    ans_res = self.evaluate_gitignore(ancestor, is_dir=True)
-                    if ans_res is True:
-                        return True
-
-            gi_res = self.evaluate_gitignore(norm_path, is_dir=is_dir)
-            if gi_res is not None:
-                return gi_res
-
-            # Level 2: Project-specific ignored_patterns in config.yaml
-            proj_patterns = getattr(self.project, "ignored_patterns", None) or []
-            if proj_patterns:
-                if any(
-                    fnmatch.fnmatch(basename, p) or fnmatch.fnmatch(norm_path, p)
-                    for p in proj_patterns
-                ):
-                    return True
-
-            # If project has .gitignore, Level 3 (Global fallback) is strictly bypassed
-            return False
-
-        # Fallback (Project has NO .gitignore):
-        # Level 2: Project-specific ignored_patterns
-        proj_patterns = getattr(self.project, "ignored_patterns", None) or []
-        if proj_patterns:
-            if any(
-                fnmatch.fnmatch(basename, p) or fnmatch.fnmatch(norm_path, p)
-                for p in proj_patterns
-            ):
-                return True
-
-        # Level 3: Global fallback
-        effective_fallback = self.fallback_ignored_patterns or BASELINE_FALLBACK_IGNORED
-        if any(
-            fnmatch.fnmatch(basename, p) or fnmatch.fnmatch(norm_path, p)
-            for p in effective_fallback
-        ):
-            return True
-
-        return False
+        ignored, _, _ = self.explain_ignored(
+            rel_path=rel_path,
+            is_dir=is_dir,
+            caller_ignored=caller_ignored,
+            check_parents=check_parents,
+            authorized_paths=authorized_paths,
+        )
+        return ignored
 
 
 _MANAGER_CACHE: dict[str, ProjectIgnoreManager] = {}

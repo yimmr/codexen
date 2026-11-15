@@ -66,7 +66,7 @@ def create_project_zip(
                         rel_d = str(dir_full.relative_to(project.root)).replace("\\", "/")
                     except ValueError:
                         rel_d = d
-                    if ignore_mgr.is_ignored(rel_d, is_dir=True, caller_ignored=user_ignored, check_parents=False):
+                    if ignore_mgr.is_ignored(rel_d, is_dir=True, caller_ignored=None, check_parents=False):
                         continue
                     filtered_dirs.append(d)
                 dirs[:] = filtered_dirs
@@ -80,7 +80,7 @@ def create_project_zip(
                         rel_file = str(file_full.relative_to(project.root)).replace("\\", "/")
                     except ValueError:
                         rel_file = f
-                    if ignore_mgr.is_ignored(rel_file, is_dir=False, caller_ignored=user_ignored, check_parents=False):
+                    if ignore_mgr.is_ignored(rel_file, is_dir=False, caller_ignored=None, check_parents=False):
                         continue
                     arcname = str(file_full.relative_to(src_target)).replace("\\", "/")
                     zf.write(file_full, arcname=arcname)

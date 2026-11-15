@@ -25,6 +25,7 @@ CRITICAL_SENSITIVE_PATTERNS = [
     r".*\.pfx$",
     r".*\.p12$",
     r"^id_(rsa|dsa|ecdsa|ed25519)($|\..*)",
+    r"(^|.*/)oauth_store\.db$",
     # Version control internal metadata (prevents corruption of .git database via raw writes)
     r"^\.git($|/.*|\\.*)",
     r"^\.svn($|/.*|\\.*)",

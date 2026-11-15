@@ -68,8 +68,12 @@ def search_project_code(
     if not query:
         raise FileServiceError("Search query cannot be empty.")
 
-    if max_file_size_mb and max_file_size_mb != 2:
-        max_file_size_bytes = max(1, max_file_size_mb) * 1024 * 1024
+    if max_file_size_mb <= 0:
+        max_file_size_bytes = 2 * 1024 * 1024
+    else:
+        # Cap single file limit safely between 1MB and 50MB to prevent accidental OOM
+        effective_mb = max(1, min(max_file_size_mb, 50))
+        max_file_size_bytes = effective_mb * 1024 * 1024
 
     flags = 0 if case_sensitive else re.IGNORECASE
     if is_regex:
@@ -91,9 +95,9 @@ def search_project_code(
     clean_subpath = subpath.replace("\\", "/").strip("/")
     clean_authorized = [p.replace("\\", "/").strip("/") for p in (authorized_paths or []) if p.strip()]
 
-    # HITL Penetration Interception Protocol (RFC 0001 Phase 3)
+    # HITL Penetration Interception Protocol (RFC 0001 Phase 3 & RFC contract compliance)
     if clean_subpath:
-        is_subpath_normally_ignored = ignore_mgr.is_ignored(
+        is_subpath_normally_ignored, rule_source, matched_pat = ignore_mgr.explain_ignored(
             clean_subpath,
             is_dir=target_dir.is_dir(),
             caller_ignored=user_ignored,
@@ -110,20 +114,47 @@ def search_project_code(
                     authorized_paths=clean_authorized,
                     confirmed=confirmed,
                 )
-                reason_msg = (
-                    f"The directory '{clean_subpath}' is excluded by project .gitignore. "
-                    f"You MUST ask the user in chat for confirmation. Once approved, "
-                    f"re-call with confirmed=True and authorized_paths=['{clean_subpath}']."
-                ) if not confirmed else (
-                    f"Path '{clean_subpath}' is excluded by project .gitignore and not covered by authorized_paths {clean_authorized}. "
-                    f"You MUST ask the user in chat for confirmation. Once approved, "
-                    f"re-call with confirmed=True and authorized_paths=['{clean_subpath}']."
-                )
+                source_display = ".gitignore" if rule_source == "project_gitignore" else rule_source
+                if not confirmed:
+                    if rule_source == "project_gitignore":
+                        reason_msg = (
+                            f"The directory '{clean_subpath}' is excluded by project .gitignore ({matched_pat}). "
+                            f"Penetrating ignored build directories may scan thousands of files and degrade performance. "
+                            f"You MUST ask the user in chat for confirmation. Once approved, "
+                            f"re-call search_code with confirmed=True and authorized_paths=['{clean_subpath}']."
+                        )
+                    elif rule_source == "global_fallback":
+                        reason_msg = (
+                            f"The directory '{clean_subpath}' is excluded by global fallback patterns ({matched_pat}). "
+                            f"You MUST ask the user in chat for confirmation. Once approved, "
+                            f"re-call search_code with confirmed=True and authorized_paths=['{clean_subpath}']."
+                        )
+                    elif rule_source == "project_config":
+                        reason_msg = (
+                            f"The directory '{clean_subpath}' is excluded by project configuration ({matched_pat}). "
+                            f"You MUST ask the user in chat for confirmation. Once approved, "
+                            f"re-call search_code with confirmed=True and authorized_paths=['{clean_subpath}']."
+                        )
+                    else:
+                        reason_msg = (
+                            f"The directory '{clean_subpath}' is excluded ({source_display}: {matched_pat}). "
+                            f"You MUST ask the user in chat for confirmation. Once approved, "
+                            f"re-call search_code with confirmed=True and authorized_paths=['{clean_subpath}']."
+                        )
+                else:
+                    reason_msg = (
+                        f"Path '{clean_subpath}' is excluded by {source_display} ({matched_pat}) and not covered by authorized_paths {clean_authorized}. "
+                        f"You MUST ask the user in chat for confirmation. Once approved, "
+                        f"re-call search_code with confirmed=True and authorized_paths=['{clean_subpath}']."
+                    )
+
                 return {
                     "status": "needs_confirmation",
                     "confirmation_type": "ignored_directory_penetration",
                     "project": project.name,
                     "requested_subpath": clean_subpath,
+                    "matched_rule_source": source_display,
+                    "matched_pattern": matched_pat,
                     "message": reason_msg,
                 }
 
@@ -220,6 +251,11 @@ def search_project_code(
             try:
                 with open(file_path, "r", encoding="utf-8", errors="replace") as fh:
                     for line_num, line in enumerate(fh, start=1):
+                        if line_num % 1000 == 0 and (time.monotonic() - start_time) > timeout_seconds:
+                            timed_out = True
+                            limit_reached = True
+                            break
+
                         if len(line) > MAX_SEARCH_LINE_CHARS:
                             truncated_lines_count += 1
                             searchable = line[:MAX_SEARCH_LINE_CHARS]
@@ -227,10 +263,14 @@ def search_project_code(
                             searchable = line
                         m = pattern.search(searchable)
                         if m:
+                            full_stripped = line.strip()
+                            is_truncated = len(full_stripped) > 300
                             matches.append({
                                 "file": rel_file,
                                 "line_number": line_num,
-                                "line_content": line.strip()[:300],  # cap single line display
+                                "line_content": full_stripped[:300],
+                                "line_truncated": is_truncated,
+                                "line_full_length": len(line),
                                 "match_span": list(m.span()),
                             })
                             if len(matches) >= max_results:

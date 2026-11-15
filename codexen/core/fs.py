@@ -90,9 +90,9 @@ def list_project_files(
 
     clean_authorized = [p.replace("\\", "/").strip("/") for p in (authorized_paths or []) if p.strip()]
 
-    # HITL Penetration Interception Protocol (RFC 0001 Phase 3)
+    # HITL Penetration Interception Protocol (RFC 0001 Phase 3 & Contract Compliance)
     if clean_subpath:
-        is_subpath_normally_ignored = ignore_mgr.is_ignored(
+        is_subpath_normally_ignored, rule_source, matched_pat = ignore_mgr.explain_ignored(
             clean_subpath,
             is_dir=target_dir.is_dir(),
             caller_ignored=user_ignored,
@@ -109,15 +109,40 @@ def list_project_files(
                     authorized_paths=clean_authorized,
                     confirmed=confirmed,
                 )
-                reason_msg = (
-                    f"The directory '{clean_subpath}' is excluded by project .gitignore. "
-                    f"You MUST ask the user in chat for confirmation. Once approved, "
-                    f"re-call with confirmed=True and authorized_paths=['{clean_subpath}']."
-                ) if not confirmed else (
-                    f"Path '{clean_subpath}' is excluded by project .gitignore and not covered by authorized_paths {clean_authorized}. "
-                    f"You MUST ask the user in chat for confirmation. Once approved, "
-                    f"re-call with confirmed=True and authorized_paths=['{clean_subpath}']."
-                )
+                source_display = ".gitignore" if rule_source == "project_gitignore" else rule_source
+                if not confirmed:
+                    if rule_source == "project_gitignore":
+                        reason_msg = (
+                            f"The directory '{clean_subpath}' is excluded by project .gitignore ({matched_pat}). "
+                            f"Penetrating ignored build directories may scan thousands of files and degrade performance. "
+                            f"You MUST ask the user in chat for confirmation. Once approved, "
+                            f"re-call with confirmed=True and authorized_paths=['{clean_subpath}']."
+                        )
+                    elif rule_source == "global_fallback":
+                        reason_msg = (
+                            f"The directory '{clean_subpath}' is excluded by global fallback patterns ({matched_pat}). "
+                            f"You MUST ask the user in chat for confirmation. Once approved, "
+                            f"re-call with confirmed=True and authorized_paths=['{clean_subpath}']."
+                        )
+                    elif rule_source == "project_config":
+                        reason_msg = (
+                            f"The directory '{clean_subpath}' is excluded by project configuration ({matched_pat}). "
+                            f"You MUST ask the user in chat for confirmation. Once approved, "
+                            f"re-call with confirmed=True and authorized_paths=['{clean_subpath}']."
+                        )
+                    else:
+                        reason_msg = (
+                            f"The directory '{clean_subpath}' is excluded ({source_display}: {matched_pat}). "
+                            f"You MUST ask the user in chat for confirmation. Once approved, "
+                            f"re-call with confirmed=True and authorized_paths=['{clean_subpath}']."
+                        )
+                else:
+                    reason_msg = (
+                        f"Path '{clean_subpath}' is excluded by {source_display} ({matched_pat}) and not covered by authorized_paths {clean_authorized}. "
+                        f"You MUST ask the user in chat for confirmation. Once approved, "
+                        f"re-call with confirmed=True and authorized_paths=['{clean_subpath}']."
+                    )
+
                 return [{
                     "name": target_dir.name,
                     "relative_path": clean_subpath,
@@ -125,6 +150,9 @@ def list_project_files(
                     "status": "needs_confirmation",
                     "confirmation_type": "ignored_directory_penetration",
                     "project": project.name,
+                    "requested_subpath": clean_subpath,
+                    "matched_rule_source": source_display,
+                    "matched_pattern": matched_pat,
                     "message": reason_msg,
                 }]
 
@@ -295,6 +323,7 @@ def read_project_file(
             chunk_size = fit_count
             next_start = returned_end + 1
             next_end = min(total_lines, returned_end + chunk_size)
+            prior_chars = sum(len(l) for l in lines[:s])
             return {
                 "status": "success",
                 "project": project.name,
@@ -308,7 +337,7 @@ def read_project_file(
                 "returned_end_line": returned_end,
                 "returned_chars": cur_chars,
                 "next_start_line": next_start,
-                "next_offset": cur_chars,
+                "next_offset": prior_chars + cur_chars,
                 "hint": f"File truncated due to size limit. Call read_file(project_id='{project.name}', relative_path='{relative_path}', start_line={next_start}, end_line={next_end}) to read the next segment.",
             }
 
@@ -742,7 +771,7 @@ def copy_project_path(
                     rel_d = str(dir_full.relative_to(source_project.root)).replace("\\", "/")
                 except ValueError:
                     rel_d = d
-                if ignore_mgr.is_ignored(rel_d, is_dir=True, caller_ignored=user_ignored, check_parents=False):
+                if ignore_mgr.is_ignored(rel_d, is_dir=True, caller_ignored=None, check_parents=False):
                     continue
                 filtered_dirs.append(d)
             dirs[:] = filtered_dirs
@@ -758,7 +787,7 @@ def copy_project_path(
                     rel_file = str(file_path.relative_to(source_project.root)).replace("\\", "/")
                 except ValueError:
                     rel_file = f
-                if ignore_mgr.is_ignored(rel_file, is_dir=False, caller_ignored=user_ignored, check_parents=False):
+                if ignore_mgr.is_ignored(rel_file, is_dir=False, caller_ignored=None, check_parents=False):
                     continue
                 src_f = cur_p / f
                 tgt_f = target_curr / f

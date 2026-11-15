@@ -20,7 +20,7 @@ import unittest
 from mcp_server_core.env import get_runtime_dir
 from codexen.config import ConfigManager, ProjectConfig
 from codexen.core.fs import list_project_files
-from codexen.core.gitignore import clear_ignore_manager_cache
+from codexen.core.gitignore import clear_ignore_manager_cache, set_audit_base_dir
 from codexen.core.search import search_project_code
 from codexen.tools import register_file_tools
 from mcp.server.fastmcp import FastMCP
@@ -82,8 +82,10 @@ projects:
         )
         self.config_mgr = ConfigManager(config_path=self.config_file, base_dir=self.temp_dir)
         self.proj = self.config_mgr.get_project("my_app")
+        set_audit_base_dir(self.temp_dir)
 
     def tearDown(self) -> None:
+        set_audit_base_dir(None)
         clear_ignore_manager_cache()
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
@@ -99,16 +101,18 @@ projects:
         self.assertEqual(res["status"], "needs_confirmation")
         self.assertEqual(res["confirmation_type"], "ignored_directory_penetration")
         self.assertEqual(res["requested_subpath"], "desktop/src-tauri/target")
+        self.assertEqual(res["matched_rule_source"], ".gitignore")
+        self.assertEqual(res["matched_pattern"], "desktop/src-tauri/target/")
         self.assertIn("MUST ask the user in chat for confirmation", res["message"])
         self.assertIn("desktop/src-tauri/target", res["message"])
 
-        # Check that audit log recorded the attempt
+        # Check that audit log recorded the attempt in isolated test directory
         runtime_dir = get_runtime_dir(self.temp_dir)
         audit_file = runtime_dir / "audit.log"
-        if audit_file.exists():
-            log_content = audit_file.read_text(encoding="utf-8")
-            self.assertIn("needs_confirmation", log_content)
-            self.assertIn("desktop/src-tauri/target", log_content)
+        self.assertTrue(audit_file.exists())
+        log_content = audit_file.read_text(encoding="utf-8")
+        self.assertIn("needs_confirmation", log_content)
+        self.assertIn("desktop/src-tauri/target", log_content)
 
     def test_confirmed_with_mismatched_authorized_paths_rejected(self) -> None:
         """Agent providing confirmed=True but incorrect authorized_paths is still rejected."""

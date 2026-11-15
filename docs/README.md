@@ -51,7 +51,7 @@ flowchart TD
 
 ### 5. 显式透明态势感知与防截断自愈 (Anti-Hallucination Telemetry)
 * 杜绝“静默丢弃文件”或“隐式尾部截断”。
-* 当发生单文件过大跳过、超长单行截断或多页长文本读取时，工具必须返回详尽的结构化遥测审计数据（`search_audit`、`truncated: true`、`total_lines`），并提供明确的下一页调用提示（`hint`），从根源上消灭外部大模型的代码幻觉。
+* 当发生单文件过大跳过、超长单行截断或多页长文本读取时，工具必须返回详尽的结构化遥测审计数据（`search_audit`、`truncated: true`、`total_file_lines`），并提供明确的下一页调用提示（`hint`），从根源上消灭外部大模型的代码幻觉。
 
 ---
 

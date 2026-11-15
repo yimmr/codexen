@@ -191,11 +191,11 @@ uv run python -m unittest discover tests -v
 
 执行结果：
 ```text
-Ran 106 tests in 8.559s
+Ran 136 tests in 10.678s
 
 OK
 ```
-**106 项单元与集成测试全量通过！**
+**136 项单元与集成测试全量通过！**
 
 ---
 
