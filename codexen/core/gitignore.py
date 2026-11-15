@@ -1,7 +1,9 @@
-"""Dynamic .gitignore engine supporting RFC 0001 multi-level rule precedence and caching."""
+"""Dynamic .gitignore engine supporting RFC 0001 multi-level rule precedence, HITL penetration, and caching."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import fnmatch
+import json
 import os
 from pathlib import Path
 import re
@@ -235,6 +237,74 @@ class GitIgnoreFile:
         return last_match
 
 
+def is_path_authorized(rel_path: str, authorized_paths: list[str] | None) -> bool:
+    """Check whether a relative path is covered by any authorized path in the HITL whitelist."""
+    if not authorized_paths:
+        return False
+
+    norm = rel_path.replace("\\", "/").strip("/")
+    basename = norm.rsplit("/", 1)[-1]
+
+    for raw_auth in authorized_paths:
+        auth = raw_auth.replace("\\", "/").strip("/")
+        if not auth:
+            continue
+        if auth == "*":
+            return True
+        # Exact match
+        if norm == auth:
+            return True
+        # Child of authorized directory (e.g. auth='target', norm='target/debug/app.exe')
+        if norm.startswith(auth + "/"):
+            return True
+        # Ancestor of authorized path (to allow traversing into an authorized subfolder)
+        if auth.startswith(norm + "/"):
+            return True
+        # Glob match on full path or basename
+        if fnmatch.fnmatch(norm, auth) or fnmatch.fnmatch(basename, auth):
+            return True
+        if norm.endswith("/" + auth):
+            return True
+
+    return False
+
+
+def log_penetration_audit(
+    project_name: str,
+    requested_path: str,
+    status: str,
+    authorized_paths: list[str] | None = None,
+    confirmed: bool = False,
+    duration_ms: float = 0.0,
+    files_scanned: int = 0,
+    matches_count: int = 0,
+    base_dir: Path | None = None,
+) -> None:
+    """Record an audit trail event in .runtime/audit.log for human-in-the-loop penetration."""
+    try:
+        from mcp_server_core.env import get_runtime_dir
+
+        runtime_dir = get_runtime_dir(base_dir)
+        audit_file = runtime_dir / "audit.log"
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "event": "penetration_audit",
+            "project": project_name,
+            "requested_path": requested_path,
+            "status": status,
+            "confirmed": confirmed,
+            "authorized_paths": list(authorized_paths or []),
+            "duration_ms": duration_ms,
+            "files_scanned": files_scanned,
+            "matches_count": matches_count,
+        }
+        with open(audit_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        # Audit logging failure must never crash core operations
+        pass
+
+
 class ProjectIgnoreManager:
     """Manages ignore rules for a project following RFC 0001 four-level precedence:
 
@@ -309,6 +379,7 @@ class ProjectIgnoreManager:
         is_dir: bool = False,
         caller_ignored: list[str] | None = None,
         check_parents: bool = True,
+        authorized_paths: list[str] | None = None,
     ) -> bool:
         """Determine whether rel_path should be ignored according to RFC 0001 rules."""
         norm_path = rel_path.replace("\\", "/").strip("/")
@@ -317,7 +388,7 @@ class ProjectIgnoreManager:
 
         basename = norm_path.rsplit("/", 1)[-1]
 
-        # Level 4: Baseline system exclusions & sensitive credentials
+        # Level 4: Baseline system exclusions & sensitive credentials (NEVER bypassed)
         if any(part in BASELINE_SYSTEM_IGNORED for part in norm_path.split("/")):
             return True
         if is_sensitive_path(norm_path) or is_sensitive_path(basename):
@@ -327,6 +398,10 @@ class ProjectIgnoreManager:
         if caller_ignored:
             if any(fnmatch.fnmatch(basename, p) or fnmatch.fnmatch(norm_path, p) for p in caller_ignored):
                 return True
+
+        # Human-in-the-loop (HITL) Penetration Authorization
+        if authorized_paths and is_path_authorized(norm_path, authorized_paths):
+            return False
 
         # Level 1: Project .gitignore
         if self.has_project_gitignore():

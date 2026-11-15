@@ -52,6 +52,8 @@ from .gitignore import (
     ProjectIgnoreManager,
     get_project_ignore_manager,
     clear_ignore_manager_cache,
+    is_path_authorized,
+    log_penetration_audit,
 )
 from .security import (
     CRITICAL_SENSITIVE_PATTERNS,
@@ -111,6 +113,8 @@ __all__ = [
     "ProjectIgnoreManager",
     "get_project_ignore_manager",
     "clear_ignore_manager_cache",
+    "is_path_authorized",
+    "log_penetration_audit",
     # Git operations
     "get_project_git_status",
     "get_project_git_diff",

@@ -21,7 +21,7 @@ flowchart LR
 | :--- | :--- | :--- | :--- | :--- |
 | **Phase 1** | **运行时弹性与 Schema 规范** | 异步非阻塞执行线程池、构建目录修剪、0 `anyOf` Schema 严格清洗 | **✅ 已交付** | v0.2.1 |
 | **Phase 2** | **动态规则与项目自决** | 动态 `.gitignore` 引擎、项目规则最高权威、`permissions` 严格纯兜底 | **✅ 已交付** | v0.2.2 |
-| **Phase 3** | **人机协同穿透授权 (HITL)** | `needs_confirmation` 协议、`authorized_paths` 局部/通配白名单 | **📋 规划中** | v0.2.3 |
+| **Phase 3** | **人机协同穿透授权 (HITL)** | `needs_confirmation` 协议、`authorized_paths` 局部/通配白名单 | **✅ 已交付** | v0.2.3 |
 | **Phase 4** | **防幻觉态势感知与分页自愈** | `search_audit` 遥测审计、`read_file` 结构化截断元数据与自愈 `hint` | **📋 规划中** | v0.2.4 |
 
 ---
@@ -96,10 +96,10 @@ flowchart LR
    - 在 `.runtime/audit.log` 中记录 Agent 申请穿透的时间、目录、用户确认状态及扫描消耗。
 
 ### 验收与验证标准
-* [ ] Agent 未提供 `confirmed=True` 时试图扫描 `target/` 必定返回 `needs_confirmation`；
-* [ ] Agent 提供 `confirmed=True` 但 `authorized_paths` 不匹配时继续拒绝；
-* [ ] 授权放行后在目标目录下仍受到单文件 2MB 及 15 秒超时熔断保护；
-* [ ] 新增 `tests/test_hitl_penetration.py` 专项测试。
+* [x] Agent 未提供 `confirmed=True` 时试图扫描 `target/` 必定返回 `needs_confirmation`；
+* [x] Agent 提供 `confirmed=True` 但 `authorized_paths` 不匹配时继续拒绝；
+* [x] 授权放行后在目标目录下仍受到单文件 2MB 及 15 秒超时熔断保护；
+* [x] 新增 `tests/test_hitl_penetration.py` 专项测试。
 
 ---
 
@@ -142,5 +142,5 @@ flowchart LR
 - [x] **2026-11-15: RFC 0001 正式立项入库**；
 - [x] **Phase 1 全量功能交付与现网端到端验证完成**；
 - [x] **Phase 2 动态 `.gitignore` 模块开发与单测覆盖**；
-- [ ] **Phase 3 HITL 穿透授权协议接入与前端/控制台联动**；
+- [x] **Phase 3 HITL 穿透授权协议接入与前端/控制台联动**；
 - [ ] **Phase 4 防截断自愈与 `search_audit` 遥测全量上线**。

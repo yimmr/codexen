@@ -158,6 +158,8 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         max_depth: int = 5,
         pattern: str = "",
         extension: str = "",
+        confirmed: bool = False,
+        authorized_paths: list[str] = [],
     ) -> dict[str, Any]:
         """List files and subdirectories inside a configured project.
 
@@ -181,6 +183,8 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             max_depth: Maximum directory depth when recursive is True (default: 5).
             pattern: Optional wildcard/glob pattern to filter filenames (e.g. '*.py', '*test*').
             extension: Optional extension filter (e.g. '.py' or 'py').
+            confirmed: Whether the user confirmed penetration of ignored directories.
+            authorized_paths: Whitelisted paths explicitly authorized by the user for penetration.
         """
         proj = _resolve_project(project_id=project_id, project_name=project_name)
         target_subpath = subpath or relative_path or path
@@ -193,6 +197,8 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             max_entries=config_mgr.settings.max_list_entries,
             pattern=pattern,
             extension=extension,
+            confirmed=confirmed,
+            authorized_paths=authorized_paths,
         )
         return ToolResultListDict(
             items,
@@ -213,6 +219,8 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         max_depth: int = 5,
         pattern: str = "",
         extension: str = "",
+        confirmed: bool = False,
+        authorized_paths: list[str] = [],
     ) -> dict[str, Any]:
         """Alias for list_files (conforms with read_project_file / write_project_file naming)."""
         return list_files(
@@ -225,6 +233,8 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             max_depth=max_depth,
             pattern=pattern,
             extension=extension,
+            confirmed=confirmed,
+            authorized_paths=authorized_paths,
         )
 
     @_register_tool()
@@ -238,6 +248,8 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         max_depth: int = 5,
         pattern: str = "",
         extension: str = "",
+        confirmed: bool = False,
+        authorized_paths: list[str] = [],
     ) -> dict[str, Any]:
         """Alias for list_files."""
         return list_files(
@@ -250,6 +262,8 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             max_depth=max_depth,
             pattern=pattern,
             extension=extension,
+            confirmed=confirmed,
+            authorized_paths=authorized_paths,
         )
 
     @_register_tool()
@@ -827,6 +841,8 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         case_sensitive: bool = False,
         file_extensions: list[str] = [],
         max_results: int = 200,
+        confirmed: bool = False,
+        authorized_paths: list[str] = [],
     ) -> dict[str, Any]:
         """High-performance code search across files in a project (conserves 90%+ LLM context tokens).
 
@@ -840,6 +856,8 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             case_sensitive: Whether match should be case-sensitive (default: False).
             file_extensions: List of extensions to include (e.g. ['.py', '.yaml', '.ts']).
             max_results: Maximum matches to return (default: 200).
+            confirmed: Whether the user confirmed penetration of ignored directories.
+            authorized_paths: Whitelisted paths explicitly authorized by the user for penetration.
         """
         proj = _resolve_project(project_id=project_id, project_name=project_name)
         target_subpath = normalize_relative_path(subpath or path)
@@ -852,6 +870,8 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             file_extensions=file_extensions,
             fallback_ignored_patterns=config_mgr.settings.ignored_patterns,
             max_results=min(max_results, config_mgr.settings.max_search_results),
+            confirmed=confirmed,
+            authorized_paths=authorized_paths,
         )
 
     @_register_tool()
@@ -865,6 +885,8 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         case_sensitive: bool = False,
         file_extensions: list[str] = [],
         max_results: int = 200,
+        confirmed: bool = False,
+        authorized_paths: list[str] = [],
     ) -> dict[str, Any]:
         """Alias for search_code. Search text or regex within project files."""
         return search_code(
@@ -877,6 +899,8 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             case_sensitive=case_sensitive,
             file_extensions=file_extensions,
             max_results=max_results,
+            confirmed=confirmed,
+            authorized_paths=authorized_paths,
         )
 
     @_register_tool()
@@ -890,6 +914,8 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         case_sensitive: bool = False,
         file_extensions: list[str] = [],
         max_results: int = 200,
+        confirmed: bool = False,
+        authorized_paths: list[str] = [],
     ) -> dict[str, Any]:
         """Alias for search_code."""
         return search_code(
@@ -902,6 +928,8 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             case_sensitive=case_sensitive,
             file_extensions=file_extensions,
             max_results=max_results,
+            confirmed=confirmed,
+            authorized_paths=authorized_paths,
         )
 
     @_register_tool()

@@ -15,7 +15,7 @@ from ..exceptions import (
     PathSecurityError,
     ReadOnlyProjectError,
 )
-from .gitignore import get_project_ignore_manager
+from .gitignore import get_project_ignore_manager, is_path_authorized, log_penetration_audit
 from .security import (
     assert_not_sensitive_path,
     ensure_project_accessible,
@@ -66,10 +66,12 @@ def list_project_files(
     max_entries: int = 1_000,
     pattern: str = "",
     extension: str = "",
+    confirmed: bool = False,
+    authorized_paths: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """List files and directories inside a project.
     
-    Supports optional pattern (glob) and extension filtering.
+    Supports optional pattern (glob), extension filtering, and HITL penetration.
     """
     ensure_project_accessible(project)
     clean_subpath = normalize_relative_path(subpath)
@@ -85,12 +87,55 @@ def list_project_files(
         project,
         fallback_ignored_patterns=fallback_ignored_patterns if fallback_ignored_patterns is not None else user_ignored,
     )
+
+    clean_authorized = [p.replace("\\", "/").strip("/") for p in (authorized_paths or []) if p.strip()]
+
+    # HITL Penetration Interception Protocol (RFC 0001 Phase 3)
+    if clean_subpath:
+        is_subpath_normally_ignored = ignore_mgr.is_ignored(
+            clean_subpath,
+            is_dir=target_dir.is_dir(),
+            caller_ignored=user_ignored,
+            check_parents=True,
+            authorized_paths=None,
+        )
+        if is_subpath_normally_ignored:
+            authorized = confirmed and is_path_authorized(clean_subpath, clean_authorized)
+            if not authorized:
+                log_penetration_audit(
+                    project_name=project.name,
+                    requested_path=clean_subpath,
+                    status="needs_confirmation",
+                    authorized_paths=clean_authorized,
+                    confirmed=confirmed,
+                )
+                reason_msg = (
+                    f"The directory '{clean_subpath}' is excluded by project .gitignore. "
+                    f"You MUST ask the user in chat for confirmation. Once approved, "
+                    f"re-call with confirmed=True and authorized_paths=['{clean_subpath}']."
+                ) if not confirmed else (
+                    f"Path '{clean_subpath}' is excluded by project .gitignore and not covered by authorized_paths {clean_authorized}. "
+                    f"You MUST ask the user in chat for confirmation. Once approved, "
+                    f"re-call with confirmed=True and authorized_paths=['{clean_subpath}']."
+                )
+                return [{
+                    "name": target_dir.name,
+                    "relative_path": clean_subpath,
+                    "type": "directory",
+                    "status": "needs_confirmation",
+                    "confirmation_type": "ignored_directory_penetration",
+                    "project": project.name,
+                    "message": reason_msg,
+                }]
+
     results: list[dict[str, Any]] = []
     root_resolved = project.root.resolve()
     clean_pattern = pattern.strip()
     clean_ext = extension.strip()
     if clean_ext and not clean_ext.startswith("."):
         clean_ext = f".{clean_ext}"
+
+    effective_authorized = clean_authorized if confirmed else None
 
     def _get_rel_path(p: Path) -> str:
         try:
@@ -122,7 +167,13 @@ def list_project_files(
 
             name = entry.name
             rel = _get_rel_path(entry)
-            if ignore_mgr.is_ignored(rel, is_dir=entry.is_dir(), caller_ignored=user_ignored, check_parents=False):
+            if ignore_mgr.is_ignored(
+                rel,
+                is_dir=entry.is_dir(),
+                caller_ignored=user_ignored,
+                check_parents=False,
+                authorized_paths=effective_authorized,
+            ):
                 continue
             try:
                 stat = entry.stat()
@@ -162,6 +213,17 @@ def list_project_files(
                 })
 
     _walk(target_dir, current_depth=1)
+
+    if confirmed and clean_authorized:
+        log_penetration_audit(
+            project_name=project.name,
+            requested_path=clean_subpath or "*",
+            status="authorized_executed",
+            authorized_paths=clean_authorized,
+            confirmed=True,
+            files_scanned=len(results),
+        )
+
     return results
 
 

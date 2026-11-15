@@ -10,7 +10,7 @@ from typing import Any
 from ..config import ProjectConfig
 from ..exceptions import FileServiceError
 from .fs import is_binary_file, matches_any_pattern
-from .gitignore import get_project_ignore_manager
+from .gitignore import get_project_ignore_manager, is_path_authorized, log_penetration_audit
 from .security import ensure_project_accessible, is_sensitive_path, safe_resolve_path
 
 # Comprehensive baseline of ignored patterns for high-density build and cache directories
@@ -54,6 +54,8 @@ def search_project_code(
     max_file_size_bytes: int = MAX_SEARCH_FILE_SIZE_BYTES,
     max_files_scanned: int = MAX_SEARCH_FILES_SCANNED,
     timeout_seconds: float = SEARCH_TIMEOUT_SECONDS,
+    confirmed: bool = False,
+    authorized_paths: list[str] | None = None,
 ) -> dict[str, Any]:
     """Search code across files in a project with high efficiency and token conservation."""
     ensure_project_accessible(project)
@@ -82,27 +84,44 @@ def search_project_code(
         fallback_ignored_patterns=fallback_ignored_patterns if fallback_ignored_patterns is not None else user_ignored,
     )
 
-    # Verify if subpath itself is excluded
     clean_subpath = subpath.replace("\\", "/").strip("/")
+    clean_authorized = [p.replace("\\", "/").strip("/") for p in (authorized_paths or []) if p.strip()]
+
+    # HITL Penetration Interception Protocol (RFC 0001 Phase 3)
     if clean_subpath:
-        if ignore_mgr.is_ignored(
+        is_subpath_normally_ignored = ignore_mgr.is_ignored(
             clean_subpath,
             is_dir=target_dir.is_dir(),
             caller_ignored=user_ignored,
             check_parents=True,
-        ):
-            return {
-                "status": "success",
-                "project": project.name,
-                "query": query,
-                "is_regex": is_regex,
-                "files_scanned": 0,
-                "total_matches": 0,
-                "limit_reached": False,
-                "timed_out": False,
-                "duration_ms": 0.0,
-                "matches": [],
-            }
+            authorized_paths=None,
+        )
+        if is_subpath_normally_ignored:
+            authorized = confirmed and is_path_authorized(clean_subpath, clean_authorized)
+            if not authorized:
+                log_penetration_audit(
+                    project_name=project.name,
+                    requested_path=clean_subpath,
+                    status="needs_confirmation",
+                    authorized_paths=clean_authorized,
+                    confirmed=confirmed,
+                )
+                reason_msg = (
+                    f"The directory '{clean_subpath}' is excluded by project .gitignore. "
+                    f"You MUST ask the user in chat for confirmation. Once approved, "
+                    f"re-call with confirmed=True and authorized_paths=['{clean_subpath}']."
+                ) if not confirmed else (
+                    f"Path '{clean_subpath}' is excluded by project .gitignore and not covered by authorized_paths {clean_authorized}. "
+                    f"You MUST ask the user in chat for confirmation. Once approved, "
+                    f"re-call with confirmed=True and authorized_paths=['{clean_subpath}']."
+                )
+                return {
+                    "status": "needs_confirmation",
+                    "confirmation_type": "ignored_directory_penetration",
+                    "project": project.name,
+                    "requested_subpath": clean_subpath,
+                    "message": reason_msg,
+                }
 
     exts = [e.lower() if e.startswith(".") else f".{e.lower()}" for e in (file_extensions or []) if e]
 
@@ -111,6 +130,8 @@ def search_project_code(
     start_time = time.monotonic()
     limit_reached = False
     timed_out = False
+
+    effective_authorized = clean_authorized if confirmed else None
 
     for root, dirs, files in os.walk(target_dir):
         cur_p = Path(root)
@@ -129,6 +150,7 @@ def search_project_code(
                 is_dir=True,
                 caller_ignored=user_ignored,
                 check_parents=False,
+                authorized_paths=effective_authorized,
             ):
                 continue
             filtered_dirs.append(d)
@@ -158,6 +180,7 @@ def search_project_code(
                 is_dir=False,
                 caller_ignored=user_ignored,
                 check_parents=False,
+                authorized_paths=effective_authorized,
             ):
                 continue
 
@@ -202,6 +225,19 @@ def search_project_code(
             break
 
     elapsed_ms = round((time.monotonic() - start_time) * 1000, 2)
+
+    # Log successful penetration audit trail if authorization was granted
+    if confirmed and clean_authorized:
+        log_penetration_audit(
+            project_name=project.name,
+            requested_path=clean_subpath or "*",
+            status="authorized_executed",
+            authorized_paths=clean_authorized,
+            confirmed=True,
+            duration_ms=elapsed_ms,
+            files_scanned=files_scanned,
+            matches_count=len(matches),
+        )
 
     return {
         "status": "success",
