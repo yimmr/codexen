@@ -8,8 +8,9 @@
 
 ---
 
-> 📖 **安装与部署指南**：  
-> 本项目的环境初始化、依赖安装、配置文件字典与 AI Agent 自动化部署规范，请参阅 📄 **[DEPLOYMENT.md (完整部署与运维指南)](DEPLOYMENT.md)**。
+> 📖 **官方工程文档与部署指南**：  
+> • **部署与运维指南**：环境初始化、网络穿透与配置字典，请参阅 📄 **[DEPLOYMENT.md (完整部署与运维指南)](DEPLOYMENT.md)**。  
+> • **架构规格与演进路线**：核心架构不变量、RFC 规格书与演进路线图，请参阅 📚 **[docs/ (官方工程文档库)](docs/README.md)**、📑 **[RFC 0001 (弹性异步与自适应检索规格)](docs/rfcs/0001-resilient-async-and-adaptive-search.md)** 及 🗺️ **[evolution-roadmap.md (架构演进路线图)](docs/evolution-roadmap.md)**。
 
 ---
 
@@ -97,6 +98,8 @@ flowchart TB
     TrayApp -. 图形化配置 .-> ProjectConfigs
 ```
 
+> 📐 **架构演进深度规范**：有关主事件循环解耦、规则四级分层流水线与 HITL 穿透时序图，请参阅 📑 **[RFC 0001 架构规格书](docs/rfcs/0001-resilient-async-and-adaptive-search.md)** 与 📚 **[docs/ (官方文档库)](docs/README.md)**。
+
 ---
 
 ## ⚡ 核心能力一览 (Features)
@@ -115,6 +118,12 @@ FastMCP 默认将 Python 列表转化为多个分散的 `TextContent` 块。许�
 
 ### 4. 零侵入注释保留热更新
 动态新增项目时，底层采用 `ruamel.yaml` 往返引擎，自动保留用户在 `config.yaml` 中编写的所有原始排版与中文注释。
+
+### 5. 弹性异步非阻塞保底与规则分层 ([RFC 0001](docs/rfcs/0001-resilient-async-and-adaptive-search.md))
+* **主事件循环饿死免疫**：所有 46 个开发工具的底层耗时 I/O、代码正则搜索与外部进程执行均被自动化派发至 Worker 线程池，保障 ASGI 事件循环和网络心跳 100% 毫秒级响应。
+* **项目自决优先**：以项目自身 `.gitignore` 为最高权威，全局 `permissions.ignored_patterns` 严格作为无规则时的安全兜底。
+* **人机协同（HITL）穿透**：严禁 Agent 擅自深入被忽略目录；需要穿透时必须向用户阐明理由并获得白名单授权（`authorized_paths`）。
+* **防截断大模型幻觉**：提供详尽的 `search_audit` 遥测元数据与 `read_file` 结构化分页自愈提示（`hint`），消灭静默丢弃与代码误改。详见 🗺️ **[docs/evolution-roadmap.md](docs/evolution-roadmap.md)**。
 
 ---
 

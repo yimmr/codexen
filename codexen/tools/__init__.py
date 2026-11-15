@@ -5,8 +5,11 @@ while also providing generic file tool aliases (read_file, write_file, run_comma
 """
 from __future__ import annotations
 
+import functools
 import os
 from typing import Any
+
+import anyio
 
 from ..config import ConfigManager
 from ..core import (
@@ -45,6 +48,20 @@ from mcp_server_core import ToolResultListDict
 def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
     """Register all file operations, project management, and developer tools onto FastMCP."""
 
+    def _register_tool(*dargs: Any, **dkwargs: Any) -> Any:
+        """Register a tool onto FastMCP with worker thread execution to avoid event loop starvation."""
+        def decorator(fn: Any) -> Any:
+            @functools.wraps(fn)
+            async def async_worker(*args: Any, **kwargs: Any) -> Any:
+                return await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
+
+            mcp.tool(*dargs, **dkwargs)(async_worker)
+            return fn
+
+        if len(dargs) == 1 and callable(dargs[0]) and not dkwargs:
+            return decorator(dargs[0])
+        return decorator
+
     def _resolve_project(project_id: str | None = None, project_name: str | None = None):
         target = (project_id or "").strip() or (project_name or "").strip()
         if not target:
@@ -52,7 +69,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             raise ValueError(f"Missing required 'project_id' or 'project_name'. Available projects: {available}")
         return config_mgr.get_project(target)
 
-    @mcp.tool()
+    @_register_tool()
     def list_projects() -> dict[str, Any]:
         """List all configured and registered projects in the workspace.
 
@@ -67,7 +84,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         proj_list = [proj.to_dict() for proj in config_mgr.projects.values()]
         return ToolResultListDict(proj_list, key="projects")
 
-    @mcp.tool()
+    @_register_tool()
     def get_project_info(
         project_id: str = "",
         project_name: str = "",
@@ -83,7 +100,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         res["status"] = "success"
         return res
 
-    @mcp.tool()
+    @_register_tool()
     def get_project(
         project_id: str = "",
         project_name: str = "",
@@ -91,7 +108,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         """Alias for get_project_info."""
         return get_project_info(project_id=project_id, project_name=project_name)
 
-    @mcp.tool()
+    @_register_tool()
     def reload_projects_config() -> dict[str, Any]:
         """Reload the projects configuration file (config.yaml) and rescan the workspace.
 
@@ -100,7 +117,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         """
         return config_mgr.reload()
 
-    @mcp.tool()
+    @_register_tool()
     def create_project(
         project_id: str = "",
         project_name: str = "",
@@ -130,7 +147,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             "message": f"Project '{pid}' successfully created and registered under {proj.root}.",
         }
 
-    @mcp.tool()
+    @_register_tool()
     def list_files(
         project_id: str = "",
         project_name: str = "",
@@ -185,7 +202,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             recursive=recursive,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def list_project_files(
         project_id: str = "",
         project_name: str = "",
@@ -210,7 +227,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             extension=extension,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def list_directory(
         project_id: str = "",
         project_name: str = "",
@@ -235,7 +252,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             extension=extension,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def read_project_file(
         project_id: str = "",
         project_name: str = "",
@@ -273,7 +290,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             end_line=end_line,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def read_file(
         project_id: str = "",
         project_name: str = "",
@@ -298,12 +315,12 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             end_line=end_line,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def read_multiple_files(
         project_id: str = "",
         project_name: str = "",
-        relative_paths: list[str] | None = None,
-        paths: list[str] | None = None,
+        relative_paths: list[str] = [],
+        paths: list[str] = [],
         encoding: str = "utf-8",
     ) -> dict[str, Any]:
         """Read contents of multiple files within a project in a single batch call.
@@ -324,12 +341,12 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             max_chars_per_file=config_mgr.settings.max_read_chars,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def batch_read_files(
         project_id: str = "",
         project_name: str = "",
-        relative_paths: list[str] | None = None,
-        paths: list[str] | None = None,
+        relative_paths: list[str] = [],
+        paths: list[str] = [],
         encoding: str = "utf-8",
     ) -> dict[str, Any]:
         """Alias for read_multiple_files."""
@@ -341,7 +358,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             encoding=encoding,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def write_project_file(
         project_id: str = "",
         project_name: str = "",
@@ -375,7 +392,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             encoding=encoding or config_mgr.settings.default_encoding,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def write_file(
         project_id: str = "",
         project_name: str = "",
@@ -398,7 +415,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             encoding=encoding,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def edit_file_snippet(
         project_id: str = "",
         project_name: str = "",
@@ -430,7 +447,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             encoding=config_mgr.settings.default_encoding,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def get_file_info(
         project_id: str = "",
         project_name: str = "",
@@ -449,7 +466,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         target_path = normalize_relative_path(relative_path or path)
         return get_project_file_info(project=proj, relative_path=target_path)
 
-    @mcp.tool()
+    @_register_tool()
     def create_directory(
         project_id: str = "",
         project_name: str = "",
@@ -468,7 +485,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         target_path = normalize_relative_path(relative_path or path)
         return create_project_directory(project=proj, relative_path=target_path)
 
-    @mcp.tool()
+    @_register_tool()
     def delete_file(
         project_id: str = "",
         project_name: str = "",
@@ -494,7 +511,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             recursive=recursive,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def delete_directory(
         project_id: str = "",
         project_name: str = "",
@@ -511,13 +528,13 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             recursive=recursive,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def copy_path(
         source_project_id: str = "",
         source_project: str = "",
         source_path: str = "",
-        target_project_id: str | None = None,
-        target_project: str | None = None,
+        target_project_id: str = "",
+        target_project: str = "",
         target_path: str = "",
         overwrite: bool = False,
         recursive: bool = True,
@@ -552,13 +569,13 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             ignored_patterns=config_mgr.settings.ignored_patterns,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def copy_directory(
         source_project_id: str = "",
         source_project: str = "",
         source_path: str = "",
-        target_project_id: str | None = None,
-        target_project: str | None = None,
+        target_project_id: str = "",
+        target_project: str = "",
         target_path: str = "",
         overwrite: bool = False,
     ) -> dict[str, Any]:
@@ -574,13 +591,13 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             recursive=True,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def copy_file(
         source_project_id: str = "",
         source_project: str = "",
         source_path: str = "",
-        target_project_id: str | None = None,
-        target_project: str | None = None,
+        target_project_id: str = "",
+        target_project: str = "",
         target_path: str = "",
         overwrite: bool = False,
     ) -> dict[str, Any]:
@@ -596,13 +613,13 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             recursive=False,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def move_path(
         source_project_id: str = "",
         source_project: str = "",
         source_path: str = "",
-        target_project_id: str | None = None,
-        target_project: str | None = None,
+        target_project_id: str = "",
+        target_project: str = "",
         target_path: str = "",
         overwrite: bool = False,
     ) -> dict[str, Any]:
@@ -630,13 +647,13 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             overwrite=overwrite,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def move_file(
         source_project_id: str = "",
         source_project: str = "",
         source_path: str = "",
-        target_project_id: str | None = None,
-        target_project: str | None = None,
+        target_project_id: str = "",
+        target_project: str = "",
         target_path: str = "",
         overwrite: bool = False,
     ) -> dict[str, Any]:
@@ -651,7 +668,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             overwrite=overwrite,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def rename_file(
         project_id: str = "",
         project_name: str = "",
@@ -677,7 +694,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             overwrite=overwrite,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def create_zip_archive(
         project_id: str = "",
         project_name: str = "",
@@ -703,7 +720,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             ignored_patterns=config_mgr.settings.ignored_patterns,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def extract_zip_archive(
         project_id: str = "",
         project_name: str = "",
@@ -733,7 +750,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             max_size_bytes=config_mgr.settings.max_zip_size_bytes,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def run_terminal_command(
         project_id: str = "",
         project_name: str = "",
@@ -776,7 +793,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             require_confirmation=require_confirmation,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def run_command(
         project_id: str = "",
         project_name: str = "",
@@ -799,7 +816,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             require_confirmation=require_confirmation,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def search_code(
         project_id: str = "",
         project_name: str = "",
@@ -808,7 +825,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         path: str = "",
         is_regex: bool = False,
         case_sensitive: bool = False,
-        file_extensions: list[str] | None = None,
+        file_extensions: list[str] = [],
         max_results: int = 200,
     ) -> dict[str, Any]:
         """High-performance code search across files in a project (conserves 90%+ LLM context tokens).
@@ -837,7 +854,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             max_results=min(max_results, config_mgr.settings.max_search_results),
         )
 
-    @mcp.tool()
+    @_register_tool()
     def search_files(
         project_id: str = "",
         project_name: str = "",
@@ -846,7 +863,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         path: str = "",
         is_regex: bool = False,
         case_sensitive: bool = False,
-        file_extensions: list[str] | None = None,
+        file_extensions: list[str] = [],
         max_results: int = 200,
     ) -> dict[str, Any]:
         """Alias for search_code. Search text or regex within project files."""
@@ -862,7 +879,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             max_results=max_results,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def find_in_files(
         project_id: str = "",
         project_name: str = "",
@@ -871,7 +888,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         path: str = "",
         is_regex: bool = False,
         case_sensitive: bool = False,
-        file_extensions: list[str] | None = None,
+        file_extensions: list[str] = [],
         max_results: int = 200,
     ) -> dict[str, Any]:
         """Alias for search_code."""
@@ -887,7 +904,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             max_results=max_results,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def git_status(project_id: str = "", project_name: str = "") -> dict[str, Any]:
         """Inspect git repository status (working tree modifications, staged files, branch) in a project.
 
@@ -898,7 +915,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         proj = _resolve_project(project_id=project_id, project_name=project_name)
         return get_project_git_status(proj)
 
-    @mcp.tool()
+    @_register_tool()
     def git_diff(
         project_id: str = "",
         project_name: str = "",
@@ -919,7 +936,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         target_path = normalize_relative_path(relative_path or path)
         return get_project_git_diff(project=proj, relative_path=target_path, staged=staged)
 
-    @mcp.tool()
+    @_register_tool()
     def git_log(
         project_id: str = "",
         project_name: str = "",
@@ -943,7 +960,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
     # --------------------------------------------------------------------------
     # Background Process & Interactive Terminal Tools
     # --------------------------------------------------------------------------
-    @mcp.tool()
+    @_register_tool()
     def start_background_process(
         project_id: str = "",
         project_name: str = "",
@@ -978,7 +995,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             require_confirmation=require_confirmation,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def read_process_output(
         process_id: str = "",
         max_chars: int = 50_000,
@@ -997,7 +1014,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             clear_buffer=clear_buffer,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def send_process_input(
         process_id: str = "",
         input_text: str = "",
@@ -1016,7 +1033,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             endline=endline,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def stop_background_process(
         process_id: str = "",
         force: bool = False,
@@ -1032,7 +1049,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             force=force,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def list_background_processes(
         project_id: str = "",
         project_name: str = "",
@@ -1050,7 +1067,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
     # --------------------------------------------------------------------------
     # Multimodal Media & Binary File Tools
     # --------------------------------------------------------------------------
-    @mcp.tool()
+    @_register_tool()
     def read_binary_file(
         project_id: str = "",
         project_name: str = "",
@@ -1071,7 +1088,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         target_path = normalize_relative_path(relative_path or path)
         return _read_binary_core(project=proj, relative_path=target_path, max_bytes=max_bytes)
 
-    @mcp.tool()
+    @_register_tool()
     def read_project_binary_file(
         project_id: str = "",
         project_name: str = "",
@@ -1088,7 +1105,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             max_bytes=max_bytes,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def write_binary_file(
         project_id: str = "",
         project_name: str = "",
@@ -1116,7 +1133,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             overwrite=overwrite,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def write_project_binary_file(
         project_id: str = "",
         project_name: str = "",
@@ -1135,7 +1152,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             overwrite=overwrite,
         )
 
-    @mcp.tool()
+    @_register_tool()
     def read_media_file(
         project_id: str = "",
         project_name: str = "",
@@ -1172,7 +1189,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         # Fallback to binary metadata dictionary
         return _read_binary_core(project=proj, relative_path=target_path)
 
-    @mcp.tool()
+    @_register_tool()
     def read_image_file(
         project_id: str = "",
         project_name: str = "",

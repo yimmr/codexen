@@ -29,6 +29,17 @@ def utc_iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# Comprehensive baseline of ignored patterns for filesystem listing protection
+DEFAULT_FS_IGNORED: list[str] = [
+    ".git", ".svn", ".hg", "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache",
+    ".venv", "venv", "env", "node_modules", ".pnpm", ".pnpm-store",
+    "target", "dist", "build", "out", "bin", "obj", ".next", ".nuxt", ".output",
+    ".tmp", "tmp", "temp", ".idea", ".vscode", "*.pyc", "*.pyo", "*.pyd",
+    "*.lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "uv.lock", "Cargo.lock",
+    "*.map", "*.min.js", "*.min.css",
+]
+
+
 def matches_any_pattern(name: str, patterns: list[str]) -> bool:
     """Check if a filename or directory name matches any glob pattern."""
     return any(fnmatch.fnmatch(name, p) for p in patterns)
@@ -67,7 +78,8 @@ def list_project_files(
     if not target_dir.is_dir():
         raise FileServiceError(f"Target path is a file, not a directory: '{subpath}' in project '{project.name}'")
 
-    ignored = ignored_patterns or []
+    user_ignored = list(ignored_patterns or [])
+    ignored = list(dict.fromkeys(user_ignored + DEFAULT_FS_IGNORED))
     results: list[dict[str, Any]] = []
     root_resolved = project.root.resolve()
     clean_pattern = pattern.strip()
@@ -105,7 +117,7 @@ def list_project_files(
 
             name = entry.name
             rel = _get_rel_path(entry)
-            if matches_any_pattern(name, ignored) or is_sensitive_path(name) or is_sensitive_path(rel):
+            if matches_any_pattern(name, ignored) or matches_any_pattern(rel, ignored) or is_sensitive_path(name) or is_sensitive_path(rel):
                 continue
             try:
                 stat = entry.stat()
