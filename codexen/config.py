@@ -28,6 +28,7 @@ class ProjectConfig:
     root: Path
     description: str = ""
     read_only: bool = False
+    ignored_patterns: list[str] = field(default_factory=list)
 
     def exists(self) -> bool:
         """Check if the mapped root directory actually exists on the filesystem."""
@@ -44,6 +45,7 @@ class ProjectConfig:
             "name": self.name,
             "description": self.description,
             "read_only": self.read_only,
+            "ignored_patterns": list(self.ignored_patterns),
             "exists": self.exists(),
         }
         if expose_root:
@@ -292,12 +294,15 @@ class ConfigManager:
 
             desc = str(item.get("description", ""))
             read_only = bool(item.get("read_only", False))
+            raw_ignored = item.get("ignored_patterns", [])
+            proj_ignored = [str(x) for x in raw_ignored if x] if isinstance(raw_ignored, list) else []
 
             new_projects[str(name)] = ProjectConfig(
                 name=str(name),
                 root=root_path,
                 description=desc,
                 read_only=read_only,
+                ignored_patterns=proj_ignored,
             )
 
         self.projects = new_projects

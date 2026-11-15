@@ -189,7 +189,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             subpath=target_subpath,
             recursive=recursive,
             max_depth=max_depth,
-            ignored_patterns=config_mgr.settings.ignored_patterns,
+            fallback_ignored_patterns=config_mgr.settings.ignored_patterns,
             max_entries=config_mgr.settings.max_list_entries,
             pattern=pattern,
             extension=extension,
@@ -850,7 +850,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             is_regex=is_regex,
             case_sensitive=case_sensitive,
             file_extensions=file_extensions,
-            ignored_patterns=config_mgr.settings.ignored_patterns,
+            fallback_ignored_patterns=config_mgr.settings.ignored_patterns,
             max_results=min(max_results, config_mgr.settings.max_search_results),
         )
 

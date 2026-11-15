@@ -15,6 +15,7 @@ from ..exceptions import (
     PathSecurityError,
     ReadOnlyProjectError,
 )
+from .gitignore import get_project_ignore_manager
 from .security import (
     assert_not_sensitive_path,
     ensure_project_accessible,
@@ -61,6 +62,7 @@ def list_project_files(
     recursive: bool = False,
     max_depth: int = 5,
     ignored_patterns: list[str] | None = None,
+    fallback_ignored_patterns: list[str] | None = None,
     max_entries: int = 1_000,
     pattern: str = "",
     extension: str = "",
@@ -79,7 +81,10 @@ def list_project_files(
         raise FileServiceError(f"Target path is a file, not a directory: '{subpath}' in project '{project.name}'")
 
     user_ignored = list(ignored_patterns or [])
-    ignored = list(dict.fromkeys(user_ignored + DEFAULT_FS_IGNORED))
+    ignore_mgr = get_project_ignore_manager(
+        project,
+        fallback_ignored_patterns=fallback_ignored_patterns if fallback_ignored_patterns is not None else user_ignored,
+    )
     results: list[dict[str, Any]] = []
     root_resolved = project.root.resolve()
     clean_pattern = pattern.strip()
@@ -117,7 +122,7 @@ def list_project_files(
 
             name = entry.name
             rel = _get_rel_path(entry)
-            if matches_any_pattern(name, ignored) or matches_any_pattern(rel, ignored) or is_sensitive_path(name) or is_sensitive_path(rel):
+            if ignore_mgr.is_ignored(rel, is_dir=entry.is_dir(), caller_ignored=user_ignored, check_parents=False):
                 continue
             try:
                 stat = entry.stat()
@@ -591,10 +596,23 @@ def copy_project_path(
 
         dest_dir.mkdir(parents=True, exist_ok=True)
 
+        user_ignored = list(ignored_patterns or [])
+        ignore_mgr = get_project_ignore_manager(source_project, fallback_ignored_patterns=user_ignored)
+
         for current_root, dirs, files in os.walk(src_resolved):
             cur_p = Path(current_root)
             # Filter subdirs in place
-            dirs[:] = [d for d in dirs if not matches_any_pattern(d, ignored)]
+            filtered_dirs: list[str] = []
+            for d in dirs:
+                dir_full = cur_p / d
+                try:
+                    rel_d = str(dir_full.relative_to(source_project.root)).replace("\\", "/")
+                except ValueError:
+                    rel_d = d
+                if ignore_mgr.is_ignored(rel_d, is_dir=True, caller_ignored=user_ignored, check_parents=False):
+                    continue
+                filtered_dirs.append(d)
+            dirs[:] = filtered_dirs
 
             rel_to_src = cur_p.relative_to(src_resolved)
             target_curr = dest_dir / rel_to_src
@@ -602,8 +620,12 @@ def copy_project_path(
             dirs_copied += 1
 
             for f in files:
-                rel_f_path = str(rel_to_src / f).replace("\\", "/")
-                if matches_any_pattern(f, ignored) or is_sensitive_path(f) or is_sensitive_path(rel_f_path):
+                file_path = cur_p / f
+                try:
+                    rel_file = str(file_path.relative_to(source_project.root)).replace("\\", "/")
+                except ValueError:
+                    rel_file = f
+                if ignore_mgr.is_ignored(rel_file, is_dir=False, caller_ignored=user_ignored, check_parents=False):
                     continue
                 src_f = cur_p / f
                 tgt_f = target_curr / f

@@ -44,6 +44,15 @@ from .git_ops import (
 from .search import (
     search_project_code,
 )
+from .gitignore import (
+    BASELINE_SYSTEM_IGNORED,
+    BASELINE_FALLBACK_IGNORED,
+    GitIgnoreRule,
+    GitIgnoreFile,
+    ProjectIgnoreManager,
+    get_project_ignore_manager,
+    clear_ignore_manager_cache,
+)
 from .security import (
     CRITICAL_SENSITIVE_PATTERNS,
     WINDOWS_RESERVED_NAMES,
@@ -94,6 +103,14 @@ __all__ = [
     "global_process_manager",
     # Search
     "search_project_code",
+    # GitIgnore & Precedence
+    "BASELINE_SYSTEM_IGNORED",
+    "BASELINE_FALLBACK_IGNORED",
+    "GitIgnoreRule",
+    "GitIgnoreFile",
+    "ProjectIgnoreManager",
+    "get_project_ignore_manager",
+    "clear_ignore_manager_cache",
     # Git operations
     "get_project_git_status",
     "get_project_git_diff",

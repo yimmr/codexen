@@ -10,6 +10,7 @@ from typing import Any
 from ..config import ProjectConfig
 from ..exceptions import FileServiceError
 from .fs import is_binary_file, matches_any_pattern
+from .gitignore import get_project_ignore_manager
 from .security import ensure_project_accessible, is_sensitive_path, safe_resolve_path
 
 # Comprehensive baseline of ignored patterns for high-density build and cache directories
@@ -48,6 +49,7 @@ def search_project_code(
     case_sensitive: bool = False,
     file_extensions: list[str] | None = None,
     ignored_patterns: list[str] | None = None,
+    fallback_ignored_patterns: list[str] | None = None,
     max_results: int = 200,
     max_file_size_bytes: int = MAX_SEARCH_FILE_SIZE_BYTES,
     max_files_scanned: int = MAX_SEARCH_FILES_SCANNED,
@@ -73,9 +75,34 @@ def search_project_code(
         escaped = re.escape(query)
         pattern = re.compile(escaped, flags)
 
-    # Merge caller ignored patterns with default baseline protection
+    # Initialize dynamic ignore manager following RFC 0001 rules
     user_ignored = list(ignored_patterns or [])
-    combined_ignored = list(dict.fromkeys(user_ignored + DEFAULT_SEARCH_IGNORED))
+    ignore_mgr = get_project_ignore_manager(
+        project,
+        fallback_ignored_patterns=fallback_ignored_patterns if fallback_ignored_patterns is not None else user_ignored,
+    )
+
+    # Verify if subpath itself is excluded
+    clean_subpath = subpath.replace("\\", "/").strip("/")
+    if clean_subpath:
+        if ignore_mgr.is_ignored(
+            clean_subpath,
+            is_dir=target_dir.is_dir(),
+            caller_ignored=user_ignored,
+            check_parents=True,
+        ):
+            return {
+                "status": "success",
+                "project": project.name,
+                "query": query,
+                "is_regex": is_regex,
+                "files_scanned": 0,
+                "total_matches": 0,
+                "limit_reached": False,
+                "timed_out": False,
+                "duration_ms": 0.0,
+                "matches": [],
+            }
 
     exts = [e.lower() if e.startswith(".") else f".{e.lower()}" for e in (file_extensions or []) if e]
 
@@ -88,7 +115,7 @@ def search_project_code(
     for root, dirs, files in os.walk(target_dir):
         cur_p = Path(root)
 
-        # Smart directory pruning: filter both directory name and relative path
+        # Smart directory pruning using RFC 0001 dynamic ignore engine
         filtered_dirs: list[str] = []
         for d in dirs:
             dir_full = cur_p / d
@@ -97,11 +124,11 @@ def search_project_code(
             except ValueError:
                 rel_d = d
 
-            if (
-                matches_any_pattern(d, combined_ignored)
-                or matches_any_pattern(rel_d, combined_ignored)
-                or is_sensitive_path(d)
-                or is_sensitive_path(rel_d)
+            if ignore_mgr.is_ignored(
+                rel_d,
+                is_dir=True,
+                caller_ignored=user_ignored,
+                check_parents=False,
             ):
                 continue
             filtered_dirs.append(d)
@@ -126,11 +153,11 @@ def search_project_code(
             except ValueError:
                 rel_file = f
 
-            if (
-                matches_any_pattern(f, combined_ignored)
-                or matches_any_pattern(rel_file, combined_ignored)
-                or is_sensitive_path(f)
-                or is_sensitive_path(rel_file)
+            if ignore_mgr.is_ignored(
+                rel_file,
+                is_dir=False,
+                caller_ignored=user_ignored,
+                check_parents=False,
             ):
                 continue
 

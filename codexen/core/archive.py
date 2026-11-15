@@ -17,6 +17,7 @@ from ..exceptions import (
     ZipSlipSecurityError,
 )
 from .fs import matches_any_pattern, utc_iso_now
+from .gitignore import get_project_ignore_manager
 from .security import (
     assert_not_sensitive_path,
     ensure_project_accessible,
@@ -47,7 +48,8 @@ def create_project_zip(
     if output_zip_path == project.root:
         output_zip_path = project.root / zip_filename
 
-    ignored = ignored_patterns or []
+    user_ignored = list(ignored_patterns or [])
+    ignore_mgr = get_project_ignore_manager(project, fallback_ignored_patterns=user_ignored)
     files_packed = 0
 
     with zipfile.ZipFile(output_zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -56,16 +58,31 @@ def create_project_zip(
             files_packed = 1
         else:
             for root, dirs, files in os.walk(src_target):
-                dirs[:] = [d for d in dirs if not matches_any_pattern(d, ignored)]
                 cur_p = Path(root)
-                for f in files:
-                    arcname = str((cur_p / f).relative_to(src_target)).replace("\\", "/")
-                    if matches_any_pattern(f, ignored) or is_sensitive_path(f) or is_sensitive_path(arcname):
+                filtered_dirs: list[str] = []
+                for d in dirs:
+                    dir_full = cur_p / d
+                    try:
+                        rel_d = str(dir_full.relative_to(project.root)).replace("\\", "/")
+                    except ValueError:
+                        rel_d = d
+                    if ignore_mgr.is_ignored(rel_d, is_dir=True, caller_ignored=user_ignored, check_parents=False):
                         continue
+                    filtered_dirs.append(d)
+                dirs[:] = filtered_dirs
+
+                for f in files:
                     file_full = cur_p / f
                     # Avoid archiving the archive itself
                     if file_full.resolve() == output_zip_path.resolve():
                         continue
+                    try:
+                        rel_file = str(file_full.relative_to(project.root)).replace("\\", "/")
+                    except ValueError:
+                        rel_file = f
+                    if ignore_mgr.is_ignored(rel_file, is_dir=False, caller_ignored=user_ignored, check_parents=False):
+                        continue
+                    arcname = str(file_full.relative_to(src_target)).replace("\\", "/")
                     zf.write(file_full, arcname=arcname)
                     files_packed += 1
 
