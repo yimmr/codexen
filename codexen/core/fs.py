@@ -30,7 +30,8 @@ def utc_iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# Comprehensive baseline of ignored patterns for filesystem listing protection
+# Legacy compatibility baseline. Runtime pruning is driven by
+# BASELINE_FALLBACK_IGNORED / project .gitignore in core/gitignore.py.
 DEFAULT_FS_IGNORED: list[str] = [
     ".git", ".svn", ".hg", "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache",
     ".venv", "venv", "env", "node_modules", ".pnpm", ".pnpm-store",
@@ -75,6 +76,8 @@ def list_project_files(
     """
     ensure_project_accessible(project)
     clean_subpath = normalize_relative_path(subpath)
+    if clean_subpath:
+        assert_not_sensitive_path(clean_subpath, "Listing")
     target_dir = safe_resolve_path(project.root, clean_subpath)
 
     if not target_dir.exists():
@@ -92,13 +95,16 @@ def list_project_files(
 
     # HITL Penetration Interception Protocol (RFC 0001 Phase 3 & Contract Compliance)
     if clean_subpath:
-        is_subpath_normally_ignored, rule_source, matched_pat = ignore_mgr.explain_ignored(
+        decision = ignore_mgr.explain_ignored_decision(
             clean_subpath,
             is_dir=target_dir.is_dir(),
             caller_ignored=user_ignored,
             check_parents=True,
             authorized_paths=None,
         )
+        is_subpath_normally_ignored = decision.ignored
+        rule_source = decision.source
+        matched_pat = decision.pattern
         if is_subpath_normally_ignored:
             authorized = confirmed and is_path_authorized(clean_subpath, clean_authorized)
             if not authorized:
@@ -143,7 +149,7 @@ def list_project_files(
                         f"re-call with confirmed=True and authorized_paths=['{clean_subpath}']."
                     )
 
-                return [{
+                result_payload = {
                     "name": target_dir.name,
                     "relative_path": clean_subpath,
                     "type": "directory",
@@ -154,7 +160,10 @@ def list_project_files(
                     "matched_rule_source": source_display,
                     "matched_pattern": matched_pat,
                     "message": reason_msg,
-                }]
+                }
+                if decision.rule_file:
+                    result_payload["rule_file"] = decision.rule_file
+                return [result_payload]
 
     results: list[dict[str, Any]] = []
     root_resolved = project.root.resolve()
@@ -518,7 +527,10 @@ def create_project_directory(project: ProjectConfig, relative_path: str) -> dict
         )
 
     ensure_project_accessible(project)
-    target_dir = safe_resolve_path(project.root, relative_path)
+    clean_rel = normalize_relative_path(relative_path)
+    assert_not_sensitive_path(clean_rel, "Creating directory")
+    target_dir = safe_resolve_path(project.root, clean_rel)
+
     target_dir.mkdir(parents=True, exist_ok=True)
 
     rel = str(target_dir.relative_to(project.root)).replace("\\", "/")

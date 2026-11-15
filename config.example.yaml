@@ -26,6 +26,13 @@ projects:
     root: "D:\\works\\example"
     description: "示例开发工程代码库"
     read_only: false
+    # 项目自定义忽略规则（可选，遵循 .gitignore 行语法，支持列表或多行文本；优先级高于全局兜底）
+    # 取消注释后生效；不配置时，若项目根也没有 .gitignore，则使用全局 permissions.ignored_patterns
+    # ignored_patterns:
+    #   - "target/"
+    #   - "dist/"
+    #   - "*.log"
+    #   - "!important.log"
 
 # ------------------------------------------------------------------------------
 # 3. 远程 Agent 开发操作权限与命令控制 (可选)
@@ -136,3 +143,19 @@ permissions:
   - "*.map"
   - "*.min.js"
   - "*.min.css"
+
+# ------------------------------------------------------------------------------
+# 4. 可观测性与日志分流配置 (mcp-server-core 0.7.0 可选)
+# 默认严格收敛于 <project_root>/.runtime/logs/，不污染操作系统全局环境
+# ------------------------------------------------------------------------------
+logging:
+  level: "INFO"               # 日志级别: DEBUG, INFO, WARNING, ERROR
+  dir: ".runtime/logs"        # 日志存放子目录 (相对项目根目录)
+  filenames:
+    app: "codexen.log"        # 业务工具执行流日志文件名
+    access: "access.log"      # HTTP/网络访问流日志文件名
+    error: "error.log"        # 异常与堆栈流日志文件名
+  max_bytes: 10485760         # 单文件轮转大小上限 (10MB)
+  backup_count: 5             # 历史归档保留份数
+  enable_console: true        # 是否在控制台同步打印
+

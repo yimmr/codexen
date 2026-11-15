@@ -43,6 +43,7 @@ except (ImportError, ModuleNotFoundError):
     Image = None
 
 from mcp_server_core import ToolResultListDict
+from mcp_server_core.logging import observe_tool
 
 
 def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
@@ -51,12 +52,14 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
     def _register_tool(*dargs: Any, **dkwargs: Any) -> Any:
         """Register a tool onto FastMCP with worker thread execution to avoid event loop starvation."""
         def decorator(fn: Any) -> Any:
-            @functools.wraps(fn)
+            observed_fn = observe_tool(fn)
+
+            @functools.wraps(observed_fn)
             async def async_worker(*args: Any, **kwargs: Any) -> Any:
-                return await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
+                return await anyio.to_thread.run_sync(functools.partial(observed_fn, *args, **kwargs))
 
             mcp.tool(*dargs, **dkwargs)(async_worker)
-            return fn
+            return observed_fn
 
         if len(dargs) == 1 and callable(dargs[0]) and not dkwargs:
             return decorator(dargs[0])
@@ -188,13 +191,16 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         """
         proj = _resolve_project(project_id=project_id, project_name=project_name)
         target_subpath = subpath or relative_path or path
+        limit = max(0, int(config_mgr.settings.max_list_entries))
+        # Fetch one extra entry as a sentinel so an exact-limit listing is not
+        # misreported as truncated while still capping the result size.
         items = _list_project_files_core(
             project=proj,
             subpath=target_subpath,
             recursive=recursive,
             max_depth=max_depth,
             fallback_ignored_patterns=config_mgr.settings.ignored_patterns,
-            max_entries=config_mgr.settings.max_list_entries,
+            max_entries=limit + 1,
             pattern=pattern,
             extension=extension,
             confirmed=confirmed,
@@ -203,15 +209,17 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
         if len(items) == 1 and isinstance(items[0], dict) and items[0].get("status") == "needs_confirmation":
             return items[0]
 
-        is_truncated = len(items) >= config_mgr.settings.max_list_entries
+        is_truncated = len(items) > limit
+        if is_truncated:
+            items = items[:limit]
         extra_meta: dict[str, Any] = {
             "truncated": is_truncated,
             "limit_reached": is_truncated,
-            "max_entries": config_mgr.settings.max_list_entries,
+            "max_entries": limit,
         }
         if is_truncated:
             extra_meta["hint"] = (
-                f"Directory listing reached maximum limit ({len(items)} entries). "
+                f"Directory listing reached maximum limit ({limit} entries). "
                 f"Use 'subpath', 'pattern', or 'extension' to narrow the scope."
             )
 
@@ -874,7 +882,7 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
             case_sensitive: Whether match should be case-sensitive (default: False).
             file_extensions: List of extensions to include (e.g. ['.py', '.yaml', '.ts']).
             max_results: Maximum matches to return (default: 200).
-            max_file_size_mb: Maximum single file size in megabytes to inspect (default: 2MB).
+            max_file_size_mb: Maximum single file size in megabytes to inspect (default: 2MB; effective range 1-50MB; <=0 falls back to 2MB).
             confirmed: Whether the user confirmed penetration of ignored directories.
             authorized_paths: Whitelisted paths explicitly authorized by the user for penetration.
         """

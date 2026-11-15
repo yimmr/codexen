@@ -12,6 +12,7 @@
 | **基础规范** | 📄 **[DEPLOYMENT.md (完整部署与运维指南)](../DEPLOYMENT.md)** | 项目初始化、多模式网络穿透、OAuth 2.1 鉴权及配置字典 | **Living** |
 | **架构演进** | 🗺️ **[evolution-roadmap.md (架构演进路线图)](evolution-roadmap.md)** | 涵盖 Phase 1 到 Phase 4 的分阶段能力交付规划与里程碑台账 | **Active** |
 | **核心 RFC** | 📑 **[RFC 0001: 弹性异步事件循环、自适应规则分层与防幻觉态势感知](rfcs/0001-resilient-async-and-adaptive-search.md)** | 确立主事件循环非阻塞保底、项目 `.gitignore` 优先、HITL 穿透授权及防截断自愈协议 | **Accepted** |
+| **开发计划** | 🧩 **[PLAN-0001: 统一 GitIgnore 忽略规则引擎](plans/0001-unified-gitignore-engine.md)** | Level 1/2/3 统一 gitignore 语法与匹配引擎、项目规则包合并与全局兜底触发条件 | **Delivered** |
 | **主工程索引** | 🏠 **[README.md (项目主页)](../README.md)** | Codexen 项目定位、核心痛点解决、架构蓝图与 46+ 工具矩阵速查 | **Living** |
 
 ---

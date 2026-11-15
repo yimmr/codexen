@@ -14,11 +14,31 @@ from mcp_server_core.env import (
     get_runtime_dir,
     update_env_variable,
 )
+from mcp_server_core.logging import LoggingConfig
 from .exceptions import ConfigurationError
 
 
 # Backward-compatibility alias
 HttpSettings = DeploymentEnvConfig
+
+
+def normalize_ignored_patterns(raw: Any) -> list[str]:
+    """Parse ignored_patterns from either a YAML list of strings or a multiline block text."""
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        return [line.rstrip("\r\n") for line in raw.splitlines() if line.rstrip("\r\n").strip()]
+    if isinstance(raw, (list, tuple)):
+        result: list[str] = []
+        for entry in raw:
+            if isinstance(entry, str) and "\n" in entry:
+                result.extend([l.rstrip("\r\n") for l in entry.splitlines() if l.rstrip("\r\n").strip()])
+            elif entry is not None:
+                s = str(entry).rstrip("\r\n")
+                if s.strip():
+                    result.append(s)
+        return result
+    return []
 
 
 @dataclass
@@ -29,6 +49,9 @@ class ProjectConfig:
     description: str = ""
     read_only: bool = False
     ignored_patterns: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.ignored_patterns = normalize_ignored_patterns(self.ignored_patterns)
 
     def exists(self) -> bool:
         """Check if the mapped root directory actually exists on the filesystem."""
@@ -144,6 +167,7 @@ class ConfigManager:
         self.projects: dict[str, ProjectConfig] = {}
         self.settings = ServiceSettings()
         self.http_settings = HttpSettings()
+        self.logging_config = LoggingConfig()
         self.workspace_root = Path(DEFAULT_WORKSPACE_ROOT)
         self.load()
 
@@ -247,16 +271,25 @@ class ConfigManager:
             command_require_confirmation=list(
                 merged_settings.get("command_require_confirmation", self.settings.command_require_confirmation)
             ),
-            ignored_patterns=list(merged_settings.get("ignored_patterns", self.settings.ignored_patterns)),
+            ignored_patterns=normalize_ignored_patterns(
+                merged_settings.get("ignored_patterns", self.settings.ignored_patterns)
+            ),
         )
 
         # Parse infrastructure & deployment environment settings (from .env with optional overrides)
         raw_http = raw_data.get("http", {}) if isinstance(raw_data.get("http"), dict) else {}
+        raw_logging = raw_data.get("logging", {}) if isinstance(raw_data.get("logging"), dict) else {}
         merged_http = {**raw_http, **raw_mcp_http}
         merged_sec = {**raw_data.get("security", {}), **raw_mcp_sec}
         overrides = {**merged_http, **merged_sec}
+        if raw_logging:
+            overrides["logging"] = raw_logging
 
         self.http_settings = DeploymentEnvConfig.load(self.base_dir, overrides=overrides, auto_create_key=True)
+        self.logging_config = getattr(self.http_settings, "logging_config", None) or LoggingConfig.from_dict_and_env(
+            base_dir=self.base_dir,
+            config_dict=raw_logging,
+        )
 
         # Parse projects
         raw_projects = raw_data.get("projects", {})
@@ -295,7 +328,7 @@ class ConfigManager:
             desc = str(item.get("description", ""))
             read_only = bool(item.get("read_only", False))
             raw_ignored = item.get("ignored_patterns", [])
-            proj_ignored = [str(x) for x in raw_ignored if x] if isinstance(raw_ignored, list) else []
+            proj_ignored = normalize_ignored_patterns(raw_ignored)
 
             new_projects[str(name)] = ProjectConfig(
                 name=str(name),

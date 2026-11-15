@@ -148,7 +148,7 @@ sequenceDiagram
 | `case_sensitive` | `bool` | `false` | 是否大小写敏感 |
 | `file_extensions` | `list[str]` | `[]` | 限定文件后缀列表（如 `[".py", ".ts"]`，严禁 `null` union） |
 | `max_results` | `int` | `200` | 最多返回匹配数 |
-| `max_file_size_mb` | `int` | `2` | 单文件检索上限（MB，默认 2MB） |
+| `max_file_size_mb` | `int` | `2` | 单文件检索上限（MB，默认 2MB；有效范围 1–50MB，`≤0` 回退 2MB） |
 | `confirmed` | `bool` | `false` | HITL 确认标志 |
 | `authorized_paths`| `list[str]` | `[]` | 本次用户明确授权穿透的目录路径白名单 |
 
@@ -286,12 +286,12 @@ flowchart LR
 
 * [x] **Phase 1（运行时弹性底座与 Schema 规范）**：
   - [x] 工具执行全面异步入池，事件循环饿死防御完毕；
-  - [x] `search_code` 基础大文件与 `DEFAULT_SEARCH_IGNORED` 基线构建目录修剪完毕；
+  - [x] `search_code` 基础大文件与 `BASELINE_FALLBACK_IGNORED` 基线构建目录修剪完毕；
   - [x] 46 个工具 Schema 严格归一化（0 `anyOf` / `null` 歧义）；
   - [x] 全量自动化测试 100% 绿灯通过。
 * [x] **Phase 2（动态规则与项目自决）**：
-  - [x] 零外部依赖动态 `.gitignore` 引擎实现，支持否定排除（`!`）、通配符与根/子目录继承；
-  - [x] 四级规则流水线落地：项目自身 `.gitignore` 拥有最高权威，全局配置严格纯兜底；
+  - [x] 统一 GitIgnore 规则引擎（PLAN-0001，基于 `pathspec>=1.1,<2`，MPL-2.0），Level 1/2/3 语法全对齐，支持否定排除（`!`）、通配符、字符类、转义、父目录排除不变量与嵌套 `.gitignore` 目录栈；
+  - [x] 四级规则流水线与 Model C 全局兜底开关落地：项目 `.gitignore` 优先，项目配置存在或根目录存在 `.gitignore`（含空文件）时全局兜底关闭；
   - [x] `.gitignore` 文件修改基于 `mtime` 秒级热重载与缓存自愈。
 * [x] **Phase 3（HITL 穿透协议与遥测审计）**：
   - [x] 拦截未经授权的被忽略目录穿透尝试，返回标准 `needs_confirmation` 结构体；

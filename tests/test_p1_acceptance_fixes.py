@@ -20,10 +20,11 @@ import zipfile
 
 from codexen.config import ConfigManager, ProjectConfig
 from codexen.core.archive import create_project_zip
-from codexen.core.fs import copy_project_path, read_project_file
+from codexen.core.fs import copy_project_path, create_project_directory, list_project_files, read_project_file
 from codexen.core.gitignore import clear_ignore_manager_cache, get_project_ignore_manager, set_audit_base_dir
 from codexen.core.search import search_project_code
 from codexen.core.security import is_sensitive_path
+from codexen.exceptions import PathSecurityError
 from codexen.tools import register_file_tools
 from mcp.server.fastmcp import FastMCP
 
@@ -213,3 +214,86 @@ projects:
         self.assertTrue(normal_res["truncated"])
         self.assertTrue(normal_res["limit_reached"])
         self.assertIn("hint", normal_res)
+
+    def test_r1_sensitive_subpaths_are_hard_blocked(self) -> None:
+        """R1: .env / .git subpaths are rejected before HITL, even with confirmed=True."""
+        proj_dir = self.workspace_dir / "sensitive_app"
+        proj_dir.mkdir(parents=True)
+        (proj_dir / ".env").write_text("SECRET_TOKEN = 'x'", encoding="utf-8")
+        (proj_dir / ".git").mkdir()
+        (proj_dir / ".git" / "config").write_text("[core]", encoding="utf-8")
+
+        proj = ProjectConfig(name="sensitive_app", root=proj_dir)
+        for sub in (".env", ".git", ".git/config"):
+            with self.subTest(subpath=sub):
+                with self.assertRaises(PathSecurityError):
+                    search_project_code(proj, query="SECRET", subpath=sub)
+                with self.assertRaises(PathSecurityError):
+                    list_project_files(proj, subpath=sub)
+                with self.assertRaises(PathSecurityError):
+                    search_project_code(
+                        proj,
+                        query="SECRET",
+                        subpath=sub,
+                        confirmed=True,
+                        authorized_paths=["*"],
+                    )
+
+    def test_r2_list_files_exact_limit_is_not_truncated(self) -> None:
+        """R2: exactly max_list_entries files is a complete listing, not a truncation."""
+        proj_dir = self.workspace_dir / "exact_limit_app"
+        proj_dir.mkdir(parents=True)
+        for i in range(5):
+            (proj_dir / f"f{i}.txt").write_text("x", encoding="utf-8")
+
+        cfg_file = self.temp_dir / "config_exact.yaml"
+        cfg_file.write_text(
+            f"""
+workspace:
+  root: "{self.workspace_dir.as_posix()}"
+settings:
+  max_list_entries: 5
+projects:
+  exact_limit_app:
+    root: "{proj_dir.as_posix()}"
+""",
+            encoding="utf-8",
+        )
+        cfg_mgr = ConfigManager(config_path=cfg_file, base_dir=self.temp_dir)
+        mcp = FastMCP("exact-limit-test")
+        tools = register_file_tools(mcp, cfg_mgr)
+
+        res = tools["list_files"](project_id="exact_limit_app")
+        self.assertEqual(res["status"], "success")
+        self.assertEqual(len(res["files"]), 5)
+        self.assertFalse(res["truncated"])
+        self.assertFalse(res["limit_reached"])
+        self.assertNotIn("hint", res)
+
+    def test_r6_env_directory_children_are_blocked(self) -> None:
+        """R6: a .env directory must not expose its children via targeted read/search."""
+        proj_dir = self.workspace_dir / "env_dir_app"
+        proj_dir.mkdir(parents=True)
+        env_dir = proj_dir / ".env"
+        env_dir.mkdir()
+        (env_dir / "secret.txt").write_text("SECRET_TOKEN_123", encoding="utf-8")
+        nested = env_dir / "nested"
+        nested.mkdir()
+        (nested / ".env.example").write_text("SECRET_INSIDE_ENV_DIR", encoding="utf-8")
+        (proj_dir / ".env.example").write_text("KEY=placeholder", encoding="utf-8")
+
+        proj = ProjectConfig(name="env_dir_app", root=proj_dir)
+
+        with self.assertRaises(PathSecurityError):
+            read_project_file(proj, ".env/secret.txt")
+        with self.assertRaises(PathSecurityError):
+            read_project_file(proj, ".env/nested/.env.example")
+        with self.assertRaises(PathSecurityError):
+            search_project_code(proj, query="SECRET_TOKEN_123", subpath=".env/secret.txt")
+        with self.assertRaises(PathSecurityError):
+            list_project_files(proj, subpath=".env")
+        with self.assertRaises(PathSecurityError):
+            create_project_directory(proj, ".env/newdir")
+
+        # The documented template exception still works.
+        self.assertIn("placeholder", read_project_file(proj, ".env.example"))

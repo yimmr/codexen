@@ -111,9 +111,25 @@ def is_sensitive_path(relative_path: str) -> bool:
         return False
     cleaned = relative_path.strip().replace("\\", "/").lstrip("/")
     name = Path(cleaned).name
-    # Explicitly permit developer template/example files (e.g. .env.example, .env.template)
     name_lower = name.lower()
-    if name_lower.startswith(".env") and any(name_lower.endswith(s) for s in SAFE_ENV_TEMPLATE_SUFFIXES):
+    # Explicitly permit developer template/example files (e.g. .env.example, .env.template),
+    # but only when they are the final filename and no sensitive ancestor exists.
+    name_is_template = name_lower.startswith(".env") and any(
+        name_lower.endswith(s) for s in SAFE_ENV_TEMPLATE_SUFFIXES
+    )
+
+    # Protect .env files/directories in ANY path segment. Checking only the basename
+    # would allow e.g. ".env/secret.txt" to bypass the credential guard when .env is
+    # a directory; the template whitelist above only applies to the final filename.
+    parts = [part for part in cleaned.split("/") if part]
+    for idx, part in enumerate(parts):
+        part_lower = part.lower()
+        if part_lower == ".env" or part_lower.startswith(".env."):
+            if idx == len(parts) - 1 and name_is_template:
+                continue
+            return True
+
+    if name_is_template:
         return False
 
     for pattern in CRITICAL_SENSITIVE_PATTERNS:

@@ -36,7 +36,7 @@ agent_execution_contract:
   health_endpoint: "http://127.0.0.1:8788/health"
   start_command: "start.bat"           # Windows 批处理或 uv run python -m codexen.launcher
   stop_command: "stop.bat"             # 或 uv run python -m codexen.launcher --stop
-  test_command: "uv run python -m unittest discover tests -v"
+  test_command: "uv run --frozen python -m unittest discover tests -v"
   isolation_rule: "Workspace root and projects must NEVER overlap with Codexen engine directory."
 ```
 
@@ -61,7 +61,8 @@ uv sync --extra test || uv pip install -e ".[test]" || pip install -e ".[test]"
 > 💡 **架构解耦与跨机部署说明**：  
 > Codexen 的底层 Streamable HTTP、OAuth 2.1 与 Cloudflare 隧道守护引擎已解耦为独立的开源核心包 [mcp-server-core](https://pypi.org/project/mcp-server-core/)（GitHub: [yimmr/mcp-framework](https://github.com/yimmr/mcp-framework)）。  
 > • **全新部署 / 他人使用**：直接执行上述 `uv sync` 命令即可，包管理器会自动从 PyPI 官方源拉取安装，**完全不依赖任何本地路径**。  
-> • **本地联合开发 (开发机专用)**：若需在本地修改框架源码并让项目实时生效，只需在开发机执行 `uv pip install -e <本地mcp-server-core源码路径>` 即可秒级开启热更新联动。
+> • **本地联合开发 (开发机专用)**：若需在本地修改框架源码并让项目实时生效，只需在开发机执行 `uv pip install -e <本地mcp-server-core源码路径>` 即可秒级开启热更新联动。  
+> • **本地 editable 环境的同步**：若 `uv.lock` 已指向本地可编辑的 `mcp-server-core`，请使用 `uv sync --frozen --extra test`；直接 `uv sync` 会尝试从索引重新解析 `mcp-server-core>=0.6.0`，在该版本未发布时可能失败。
 
 ---
 
@@ -125,6 +126,11 @@ projects:
     root: "D:\works\my_project"
     description: "业务工程"
     read_only: false               # true 为只读项目
+    ignored_patterns:             # 项目自定义忽略规则（可选，遵循 .gitignore 行语法，支持列表或多行文本）
+      - "target/"
+      - "dist/"
+      - "*.log"
+      - "!important.log"
 
 permissions:
   allow_file_read: true
@@ -143,6 +149,23 @@ permissions:
     - "git push"
     - "git reset --hard"
 ```
+
+### 2.3 忽略规则引擎配置 (Unified GitIgnore Engine, PLAN-0001)
+
+Codexen 统一采用标准的 Git `.gitignore` 行语法与匹配引擎（基于 `pathspec>=1.1,<2`，MPL-2.0 许可），消除了旧版本多套规则语法不一致的问题：
+
+1. **规则优先级（四级流水线）**：
+   - **Level 1**：项目根与子目录 `.gitignore`（最高权威，深层子目录优先于浅层）；
+   - **Level 2**：`projects.<id>.ignored_patterns`（项目自定义配置，基准为项目根）；
+   - **Level 3**：`permissions.ignored_patterns`（全局兜底规则）；
+   - **Level 4**：底层敏感凭据与 VCS 元数据绝对硬阻断（`.env*`、私钥、`.git`、`oauth_store.db`，永不放行）。
+2. **Model C 全局兜底开关**：
+   - 当且仅当“**项目根目录不存在 `.gitignore` 且项目独立配置为空**”时，启用全局兜底（Level 3）；
+   - 若项目根目录存在 `.gitignore`（**包含 0 字节空文件**）或配置了 `projects.<id>.ignored_patterns`，全局兜底自动关闭；
+   - 子目录 `.gitignore` 遵循 Git 原生语义仅作用于其所在子树，不改变整个项目的全局兜底状态。
+3. **引擎灰度与回退控制**：
+   - 默认启用 `pathspec` 引擎；如遇特殊兼容性诉求，可通过环境变量 `CODEXEN_IGNORE_ENGINE=legacy` 切回旧引擎，无需迁移配置文件。
+   - **注意**：legacy 引擎恢复的是旧版 Level 2/3 语义——当项目配置存在、根目录无 `.gitignore` 时，配置未命中的路径仍可能回落全局兜底；这与当前 Model C（项目配置存在即关闭全局）不同。仅在确实需要旧行为时使用 legacy。
 
 ---
 
@@ -226,9 +249,10 @@ curl -s http://127.0.0.1:8788/health
 curl -s https://codexen.yourdomain.com/health
 # 期望返回: {"status":"healthy"}
 
-# 3. 运行全量自动化测试基线 (136 项测试)
-uv run python -m unittest discover tests -v
-# 期望返回: Ran 136 tests ... OK
+# 3. 运行全量自动化测试基线 (161 项测试)
+# 本地 editable mcp-server-core 环境使用 --frozen；全新环境按 §1.2 先 uv sync
+uv run --frozen python -m unittest discover tests -v
+# 期望返回: Ran 161 tests ... OK
 ```
 
 ---

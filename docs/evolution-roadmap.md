@@ -35,7 +35,7 @@ flowchart LR
    - 在 `codexen/tools/__init__.py` 中引入 `_register_tool` 装饰器，基于 `anyio.to_thread.run_sync` 将所有 46 个工具调用派发至 Worker 线程池；
    - 彻底解放 ASGI / Uvicorn 主事件循环，任何文件 I/O、正则检索与终端命令执行均不再影响健康检查、网络心跳与新请求握手。
 2. **构建目录基础修剪与防 DoS 检索**：
-   - 在 `codexen/core/search.py` 中内置 `DEFAULT_SEARCH_IGNORED` 基线黑名单（`target`, `dist`, `build`, `.pnpm`, `*.lock` 等）；
+   - 在 `codexen/core/gitignore.py` 中内置 `BASELINE_FALLBACK_IGNORED` 基线黑名单（`target`, `dist`, `build`, `.pnpm`, `*.lock` 等），并由 `search_code` / `list_files` 统一复用；
    - 在 `codexen/core/fs.py` 中同步实现双重相对路径剪枝与单文件 2MB 大小跳过保护。
 3. **Schema 严格清洗与归一化**：
    - 清理所有工具参数中的 `list[str] | None = None` 与 `str | None = None`；
@@ -43,7 +43,7 @@ flowchart LR
 
 ### 验收与验证标准
 * [x] 在包含 6,380+ 文件的 Tauri/Rust 混合工程中，`search_code` 检索耗时从 400+ 秒降至 21 毫秒（提速 18,000+ 倍）；
-* [x] 110 项自动化单元测试全部通过（`test_async_search_concurrency.py` 验证并发无阻塞）；
+* [x] 161 项自动化单元测试全部通过（`test_async_search_concurrency.py` 验证并发无阻塞）；
 * [x] 真实 MCP Streamable HTTP 客户端端到端校验通过。
 
 ---
@@ -128,7 +128,7 @@ flowchart LR
    - 列出跳过的大文件清单（含文件路径、大小、原因）、超长行安全截断警告（防止 ReDoS）、修剪的顶层目录清单；
    - 允许 Agent 根据审计信息向用户清晰解释“为什么某些文件未被扫描”。
 3. **大文件体积阈值动态调优**：
-   - 新增可选参数 `max_file_size_mb: int = 2`，允许 Agent 在获权场景下适度调大单文件阈值。
+   - 新增可选参数 `max_file_size_mb: int = 2`，允许 Agent 在获权场景下适度调大单文件阈值（实现上限 50MB，`≤0` 时回退 2MB）。
 
 ### 验收与验证标准
 * [x] 针对 50,000 行超长文件调用 `read_file`，验证返回包含精确的 `next_start_line` 与调用 `hint`；

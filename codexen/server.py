@@ -18,6 +18,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 
 from mcp_server_core.env import get_runtime_dir
+from mcp_server_core.logging import set_global_payload_hook
 from mcp_server_core.oauth import LocalOAuthServer
 from mcp_server_core.server import (
     build_mcp_server_app,
@@ -31,6 +32,51 @@ from .tools import register_file_tools
 
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
+
+
+def codexen_payload_hook(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any] | None:
+    """Payload summary hook for large files and binary content to prevent log bloat."""
+    if not isinstance(arguments, dict):
+        return None
+
+    modified = dict(arguments)
+    changed = False
+
+    # 1. Truncate long content in write_file, write_project_file, edit_file_snippet
+    if tool_name in ("write_file", "write_project_file") and "content" in modified:
+        content = modified["content"]
+        if isinstance(content, str) and len(content) > 300:
+            preview = content[:100].replace("\n", " ").replace("\r", "")
+            modified["content"] = f"[file_content: {len(content)} chars, preview='{preview}...']"
+            changed = True
+
+    if tool_name == "edit_file_snippet":
+        for k in ("search_block", "replacement_block"):
+            if k in modified and isinstance(modified[k], str) and len(modified[k]) > 300:
+                snippet = modified[k]
+                preview = snippet[:80].replace("\n", " ").replace("\r", "")
+                modified[k] = f"[snippet: {len(snippet)} chars, preview='{preview}...']"
+                changed = True
+
+    # 2. Binary tools: write_binary_file, write_project_binary_file
+    if tool_name in ("write_binary_file", "write_project_binary_file") and "content_base64" in modified:
+        b64 = modified["content_base64"]
+        if isinstance(b64, str) and len(b64) > 100:
+            modified["content_base64"] = f"[base64_data: {len(b64)} chars]"
+            changed = True
+
+    # 3. Process session input: send_process_input
+    if tool_name == "send_process_input" and "input_text" in modified:
+        inp = modified["input_text"]
+        if isinstance(inp, str) and len(inp) > 300:
+            preview = inp[:100].replace("\n", " ").replace("\r", "")
+            modified["input_text"] = f"[input_text: {len(inp)} chars, preview='{preview}...']"
+            changed = True
+
+    return modified if changed else None
+
+
+set_global_payload_hook(codexen_payload_hook)
 
 
 def create_http_server(
@@ -100,6 +146,7 @@ def build_starlette_app(
         service_title=config_mgr.http_settings.service_title,
         root_info_builder=root_info_builder,
         require_auth=require_auth,
+        payload_hook=codexen_payload_hook,
     )
 
 
@@ -134,6 +181,7 @@ async def serve(
         service_title=cfg.http_settings.service_title,
         banner_title=f"{cfg.http_settings.display_title} (Remote Agent Ready)",
         banner_items=banner_items,
+        payload_hook=codexen_payload_hook,
     )
 
 
@@ -142,7 +190,12 @@ def serve_stdio(config_path: str | Path | None = None) -> None:
     cfg = ConfigManager(config_path=config_path, base_dir=ROOT)
     stdio_server = FastMCP("Codexen File Service Stdio")
     register_file_tools(stdio_server, cfg)
-    framework_serve_stdio(stdio_server)
+    framework_serve_stdio(
+        stdio_server,
+        base_dir=ROOT,
+        service_name=cfg.http_settings.service_name,
+        payload_hook=codexen_payload_hook,
+    )
 
 
 def run() -> None:

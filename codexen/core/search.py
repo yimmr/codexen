@@ -11,9 +11,14 @@ from ..config import ProjectConfig
 from ..exceptions import FileServiceError
 from .fs import is_binary_file, matches_any_pattern
 from .gitignore import get_project_ignore_manager, is_path_authorized, log_penetration_audit
-from .security import ensure_project_accessible, is_sensitive_path, safe_resolve_path
+from .security import (
+    assert_not_sensitive_path,
+    ensure_project_accessible,
+    safe_resolve_path,
+)
 
-# Comprehensive baseline of ignored patterns for high-density build and cache directories
+# Legacy compatibility baseline. Runtime pruning is driven by
+# BASELINE_FALLBACK_IGNORED / project .gitignore in core/gitignore.py.
 DEFAULT_SEARCH_IGNORED: list[str] = [
     # VCS & metadata
     ".git", ".svn", ".hg", ".bzr",
@@ -60,6 +65,9 @@ def search_project_code(
 ) -> dict[str, Any]:
     """Search code across files in a project with high efficiency and token conservation."""
     ensure_project_accessible(project)
+    # Credentials/VCS metadata are absolutely blocked, even with confirmed=True.
+    if subpath:
+        assert_not_sensitive_path(subpath, "Searching")
     target_dir = safe_resolve_path(project.root, subpath)
 
     if not target_dir.exists():
@@ -97,13 +105,16 @@ def search_project_code(
 
     # HITL Penetration Interception Protocol (RFC 0001 Phase 3 & RFC contract compliance)
     if clean_subpath:
-        is_subpath_normally_ignored, rule_source, matched_pat = ignore_mgr.explain_ignored(
+        decision = ignore_mgr.explain_ignored_decision(
             clean_subpath,
             is_dir=target_dir.is_dir(),
             caller_ignored=user_ignored,
             check_parents=True,
             authorized_paths=None,
         )
+        is_subpath_normally_ignored = decision.ignored
+        rule_source = decision.source
+        matched_pat = decision.pattern
         if is_subpath_normally_ignored:
             authorized = confirmed and is_path_authorized(clean_subpath, clean_authorized)
             if not authorized:
@@ -148,7 +159,7 @@ def search_project_code(
                         f"re-call search_code with confirmed=True and authorized_paths=['{clean_subpath}']."
                     )
 
-                return {
+                result_payload = {
                     "status": "needs_confirmation",
                     "confirmation_type": "ignored_directory_penetration",
                     "project": project.name,
@@ -157,6 +168,9 @@ def search_project_code(
                     "matched_pattern": matched_pat,
                     "message": reason_msg,
                 }
+                if decision.rule_file:
+                    result_payload["rule_file"] = decision.rule_file
+                return result_payload
 
     exts = [e.lower() if e.startswith(".") else f".{e.lower()}" for e in (file_extensions or []) if e]
 
