@@ -1,7 +1,7 @@
 # Codexen 架构演进与能力交付路线图 🗺️
 ### Codexen Architecture Evolution & Capability Delivery Roadmap
 
-本文档详细规划了 **Codexen** 桥接引擎的四个架构演进阶段，明确了各阶段的设计目标、技术要点、依赖变更与完成标准。
+本文档详细规划了 **Codexen** 桥接引擎的五个架构演进阶段，明确了各阶段的设计目标、技术要点、依赖变更与完成标准。
 
 ---
 
@@ -13,8 +13,9 @@ flowchart LR
     Phase2["Phase 2: 动态规则与项目自决<br/>(✅ 已交付 / 现网验证)"]
     Phase3["Phase 3: 人机协同穿透授权 (HITL)<br/>(✅ 已交付 / 现网验证)"]
     Phase4["Phase 4: 防幻觉态势感知与分页自愈<br/>(✅ 已交付 / 现网验证)"]
+    Phase5["Phase 5: 全链路可观测性与日志体系<br/>(✅ 已交付 / 现网验证)"]
 
-    Phase1 --> Phase2 --> Phase3 --> Phase4
+    Phase1 --> Phase2 --> Phase3 --> Phase4 --> Phase5
 ```
 
 | 阶段 | 核心主题 | 关键交付物 | 状态 | 目标版本 |
@@ -23,6 +24,7 @@ flowchart LR
 | **Phase 2** | **动态规则与项目自决** | 动态 `.gitignore` 引擎、项目规则最高权威、`permissions` 严格纯兜底 | **✅ 已交付** | v0.2.2 |
 | **Phase 3** | **人机协同穿透授权 (HITL)** | `needs_confirmation` 协议、`authorized_paths` 局部/通配白名单 | **✅ 已交付** | v0.2.3 |
 | **Phase 4** | **防幻觉态势感知与分页自愈** | `search_audit` 遥测审计、`read_file` 结构化截断元数据与自愈 `hint` | **✅ 已交付** | v0.2.4 |
+| **Phase 5** | **全链路可观测性与日志体系** | 通用框架切面拦截、滚动日志轮转、CF-Ray / X-Request-ID 全链路追踪 | **✅ 已交付** | v0.3.0 |
 
 ---
 
@@ -137,10 +139,34 @@ flowchart LR
 
 ---
 
+## 📌 Phase 5: 全链路可观测性与日志体系 (Two-Layer Observability & Logging Engine) - `✅ 已交付 (v0.3.0)`
+
+> **目标**：建立“通用框架底座 (`mcp-server-core`) + 业务消费端 (`Codexen`)”双层可观测性与日志轮转体系，消除调试盲区，实现微秒级工具耗时打点、边缘请求全链路串联与零样板代码接入。
+
+### 核心交付内容
+1. **双层架构解耦与零侵入切面拦截**：
+   - 通用框架底座提供 `@observe_tool` 切面拦截器，自动捕获入参、出参、执行耗时与未捕获异常；
+   - 业务宿主实现“零样板代码接入”，所有业务工具专注于业务逻辑，无需侵入性编写日志打点。
+2. **全链路追踪与边缘穿透关联**：
+   - 在 ASGI 中间件中解析 Cloudflare 边缘 `cf-ray` 标头及 `X-Request-ID`，通过 Python `contextvars` 在整个异步/同步调用链中隐式传递；
+   - `access.log` 与 `app.log` 统一打上 `trace_id`，实现从公网边缘到本地执行的一键串联排查。
+3. **安全脱敏与多文件滚动日志引擎**：
+   - 内置敏感凭据正则脱敏过滤器（Token、Key、Password 等自动遮蔽为 `***`）；
+   - 区分 `access.log`（HTTP 访问审计）、`app.log`（业务执行与异常）、`error.log`（错误日志），支持按大小自动轮转备份；
+   - 遵循“约定优于配置”，日志默认集中存放于 `<project_root>/.runtime/logs/`，避免污染操作系统全局环境。
+
+### 验收与验证标准
+* [x] 工具执行耗时打点精度达微秒级，异常输出包含完整调用栈与 `trace_id`；
+* [x] 敏感配置与 Authorization 标头脱敏率 100%；
+* [x] 170 项全量自动化测试套件通过率 100%（新增 `test_logging_observability.py` 覆盖双层切面与轮转）。
+
+---
+
 ## 📋 里程碑核验清单 (Milestone Checklist)
 
 - [x] **2026-11-15: RFC 0001 正式立项入库**；
 - [x] **Phase 1 全量功能交付与现网端到端验证完成**；
 - [x] **Phase 2 动态 `.gitignore` 模块开发与单测覆盖**；
 - [x] **Phase 3 HITL 穿透授权协议接入与前端/控制台联动**；
-- [x] **Phase 4 防截断自愈与 `search_audit` 遥测全量上线**。
+- [x] **Phase 4 防截断自愈与 `search_audit` 遥测全量上线**；
+- [x] **Phase 5 双层全链路可观测性、日志轮转与 170 项全量单测通过**。

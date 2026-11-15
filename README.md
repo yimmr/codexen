@@ -121,7 +121,7 @@ FastMCP 默认将 Python 列表转化为多个分散的 `TextContent` 块。许�
 
 ### 5. 弹性异步非阻塞保底与规则分层 ([RFC 0001](docs/rfcs/0001-resilient-async-and-adaptive-search.md))
 * **主事件循环饿死免疫**：所有 46 个开发工具的底层耗时 I/O、代码正则搜索与外部进程执行均被自动化派发至 Worker 线程池，保障 ASGI 事件循环和网络心跳 100% 毫秒级响应。
-* **统一 GitIgnore 规则引擎与项目自决 ([PLAN-0001](docs/plans/0001-unified-gitignore-engine.md))**：Level 1/2/3 规则语法与内核全对齐（基于 `pathspec` MPL-2.0），以项目自身 `.gitignore` 为最高权威，支持 Model C 全局兜底开关与嵌套目录栈按需解析。
+* **统一 GitIgnore 规则引擎与项目自决 ([RFC 0001](docs/rfcs/0001-resilient-async-and-adaptive-search.md#31-原则-1项目自决与四级分层规则))**：Level 1/2/3 规则语法与内核全对齐（基于 `pathspec` MPL-2.0），以项目自身 `.gitignore` 为最高权威，支持 Model C 全局兜底开关与嵌套目录栈按需解析。
 * **人机协同（HITL）穿透**：严禁 Agent 擅自深入被忽略目录；需要穿透时必须向用户阐明理由并获得白名单授权（`authorized_paths`）。
 * **防截断大模型幻觉**：提供详尽的 `search_audit` 遥测元数据与 `read_file` 结构化分页自愈提示（`hint`），消灭静默丢弃与代码误改。详见 🗺️ **[docs/evolution-roadmap.md](docs/evolution-roadmap.md)**。
 

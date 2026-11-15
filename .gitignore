@@ -41,6 +41,11 @@ oauth_store.db
 .DS_Store
 Thumbs.db
 
+# Internal development plans & WIP execution docs (Local only)
+docs/plans/
+docs/internal/
+*.plan.md
+
 # Binary tools & external downloads
 bin/
 

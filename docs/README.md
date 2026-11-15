@@ -1,7 +1,7 @@
 # Codexen 工程规格与架构演进文档库 📚
 ### Codexen Engineering Specifications & Architecture Evolution Library
 
-欢迎查阅 **Codexen** 官方工程技术文档库。本目录是 Codexen 项目的正式架构规格书（RFC）、技术演进路线图（Roadmap）以及工程最佳实践规范的归档中枢。
+欢迎查阅 **Codexen** 官方工程技术文档库。本目录是 Codexen 项目的正式架构规格书（RFC）、技术演进路线图（Roadmap）以及工程与流程规范的归档中枢。
 
 ---
 
@@ -9,17 +9,22 @@
 
 | 类别 / 阶段 | 文档入口 | 核心职责与说明 | 状态 |
 | :--- | :--- | :--- | :--- |
+| **工程规范** | 📋 **[standards/ (工程与流程规范体系)](standards/README.md)** | 开发协作工作流、Conventional Commits 规范、五大安全不变量及 RFC 治理机制 | **Living** |
 | **基础规范** | 📄 **[DEPLOYMENT.md (完整部署与运维指南)](../DEPLOYMENT.md)** | 项目初始化、多模式网络穿透、OAuth 2.1 鉴权及配置字典 | **Living** |
-| **架构演进** | 🗺️ **[evolution-roadmap.md (架构演进路线图)](evolution-roadmap.md)** | 涵盖 Phase 1 到 Phase 4 的分阶段能力交付规划与里程碑台账 | **Active** |
+| **架构演进** | 🗺️ **[evolution-roadmap.md (架构演进路线图)](evolution-roadmap.md)** | 涵盖 Phase 1 到 Phase 5 的分阶段能力交付规划与里程碑台账 | **Active** |
 | **核心 RFC** | 📑 **[RFC 0001: 弹性异步事件循环、自适应规则分层与防幻觉态势感知](rfcs/0001-resilient-async-and-adaptive-search.md)** | 确立主事件循环非阻塞保底、项目 `.gitignore` 优先、HITL 穿透授权及防截断自愈协议 | **Accepted** |
-| **开发计划** | 🧩 **[PLAN-0001: 统一 GitIgnore 忽略规则引擎](plans/0001-unified-gitignore-engine.md)** | Level 1/2/3 统一 gitignore 语法与匹配引擎、项目规则包合并与全局兜底触发条件 | **Delivered** |
+| **RFC 索引** | 📑 **[rfcs/ (架构规格书总库)](rfcs/README.md)** | 全量 RFC 归档索引列表与历史规格记录 | **Living** |
+| **RFC 模板** | 📝 **[RFC 编写模板](rfcs/template.md)** | 新建技术提案时的标准结构、元数据与编写指南 | **Living** |
 | **主工程索引** | 🏠 **[README.md (项目主页)](../README.md)** | Codexen 项目定位、核心痛点解决、架构蓝图与 46+ 工具矩阵速查 | **Living** |
+
+> 🔒 **开发计划与实施细案说明**：  
+> 具体的 Sprint 任务细案、排期与本地执行草案统一归档于本地私有目录（`docs/plans/`，已通过 `.gitignore` 隔离），不向公共远程仓库同步。公开技术演进与架构决策请统一以 **[RFC 规格书库](rfcs/README.md)** 与 **[架构演进路线图](evolution-roadmap.md)** 为准。
 
 ---
 
 ## 🏛️ Codexen 架构设计哲学与安全不变量 (Core Invariants)
 
-在推进任何功能迭代、工具扩展或 Agent 交互时，Codexen 必须始终坚守以下五大不可逾越的底层架构不变量：
+在推进任何功能迭代、工具扩展或 Agent 交互时，Codexen 必须始终坚守以下五大不可逾越的底层架构不变量（详见 🛡️ **[核心架构与安全不变量规范](standards/security-invariants.md)**）：
 
 ```mermaid
 flowchart TD
@@ -58,7 +63,7 @@ flowchart TD
 
 ## 📜 RFC 规格演进流程 (RFC Process)
 
-Codexen 的架构演进采用标准化 RFC（Request for Comments）机制进行规范化管理：
+Codexen 的架构演进采用标准化 RFC 机制进行规范化管理（详见 📜 **[RFC 架构演进治理流程规范](standards/rfc-process.md)**）：
 
 1. **提案草案 (Draft)**：提出针对核心架构、工具协议、安全护栏或通信层的重大变更设想，确立痛点与实施范围。
 2. **审查评审 (Review)**：由维护者与核心开发者共同审查技术可行性、向下兼容性、多平台 Agent 行为影响及安全边界。
@@ -69,4 +74,4 @@ Codexen 的架构演进采用标准化 RFC（Request for Comments）机制进行
 ---
 
 > 💡 **参与贡献提示**：  
-> 新增技术规格或调整现有工具契约前，请先阅读 [RFC 0001: 弹性异步事件循环、自适应规则分层与防幻觉态势感知](rfcs/0001-resilient-async-and-adaptive-search.md) 与 [evolution-roadmap.md](evolution-roadmap.md)，并在 `docs/rfcs/` 目录下按编号顺序提交新的 RFC 文档。
+> 新增技术规格或调整现有工具契约前，请先阅读 🛠️ **[开发与协作工作流规范](standards/development-workflow.md)**、📑 **[RFC 0001 架构规格书](rfcs/0001-resilient-async-and-adaptive-search.md)** 与 🗺️ **[架构演进路线图](evolution-roadmap.md)**，并在 `docs/rfcs/` 目录下按编号顺序提交新的 RFC 文档。
