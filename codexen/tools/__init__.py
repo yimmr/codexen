@@ -25,6 +25,7 @@ from .batch_tools import register_batch_tools
 from .binary_tools import register_binary_tools
 from .command_tools import register_command_tools
 from .decorators import ToolContext
+from .document_tools import register_document_tools
 from .file_tools import register_file_crud_tools
 from .git_tools import register_git_tools
 from .path_tools import register_path_tools
@@ -66,6 +67,9 @@ def register_file_tools(mcp: Any, config_mgr: ConfigManager) -> dict[str, Any]:
 
     # 10. Binary & media tools
     register_binary_tools(ctx)
+
+    # 11. Rich document tools (PDF, DOCX, XLSX, PPTX)
+    register_document_tools(ctx)
 
     return ctx.tools
 

@@ -1,10 +1,13 @@
 """File read, write, edit snippet, and metadata inspection tools."""
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from ..core import (
+    DOCUMENT_EXTENSIONS,
     edit_project_file_snippet,
+    extract_document_content,
     get_project_file_info,
     normalize_relative_path,
 )
@@ -49,6 +52,22 @@ def register_file_crud_tools(ctx: ToolContext) -> None:
         """
         proj = ctx.resolve_project(project_id=project_id, project_name=project_name)
         target_path = normalize_relative_path(relative_path or path)
+        suffix = Path(target_path).suffix.lower()
+        if suffix in DOCUMENT_EXTENSIONS:
+            doc_res = extract_document_content(
+                project=proj,
+                relative_path=target_path,
+                page=1,
+                page_count=10,
+                max_chars=ctx.config_mgr.settings.max_read_chars,
+                auto_paginate=True,
+            )
+            doc_res["hint"] = (
+                f"Notice: '{target_path}' is a rich document file. Codexen transparently extracted the first 10 pages for you. "
+                f"For advanced pagination, sheet selection, or slide slicing, please call the dedicated 'read_document_file' (or 'inspect_document') tool."
+            )
+            return doc_res
+
         return _read_core(
             project=proj,
             relative_path=target_path,

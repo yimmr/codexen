@@ -14,6 +14,12 @@ from .command import (
     run_project_command,
     truncate_command_output,
 )
+from .document import (
+    DOCUMENT_EXTENSIONS,
+    extract_document_content,
+    inspect_document_outline,
+    read_project_document,
+)
 from .fs import (
     copy_project_path,
     count_file_lines_stream,
@@ -77,6 +83,11 @@ __all__ = [
     "is_sensitive_path",
     "assert_not_sensitive_path",
     "ensure_project_accessible",
+    # Document Engine
+    "DOCUMENT_EXTENSIONS",
+    "extract_document_content",
+    "inspect_document_outline",
+    "read_project_document",
     # Filesystem
     "utc_iso_now",
     "matches_any_pattern",

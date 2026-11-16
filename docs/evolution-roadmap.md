@@ -14,8 +14,9 @@ flowchart LR
     Phase3["Phase 3: 人机协同穿透授权 (HITL)<br/>(✅ 已交付 / 现网验证)"]
     Phase4["Phase 4: 防幻觉态势感知与分页自愈<br/>(✅ 已交付 / 现网验证)"]
     Phase5["Phase 5: 全链路可观测性与日志体系<br/>(✅ 已交付 / 现网验证)"]
+    Phase6["Phase 6: 通用文档智能解析与防溢出自愈<br/>(✅ 已交付 / RFC 0002)"]
 
-    Phase1 --> Phase2 --> Phase3 --> Phase4 --> Phase5
+    Phase1 --> Phase2 --> Phase3 --> Phase4 --> Phase5 --> Phase6
 ```
 
 | 阶段 | 核心主题 | 关键交付物 | 状态 | 目标版本 |
@@ -25,6 +26,7 @@ flowchart LR
 | **Phase 3** | **人机协同穿透授权 (HITL)** | `needs_confirmation` 协议、`authorized_paths` 局部/通配白名单 | **✅ 已交付** | v0.2.3 |
 | **Phase 4** | **防幻觉态势感知与分页自愈** | `search_audit` 遥测审计、`read_file` 结构化截断元数据与自愈 `hint` | **✅ 已交付** | v0.2.4 |
 | **Phase 5** | **全链路可观测性与日志体系** | 通用框架切面拦截、滚动日志轮转、CF-Ray / X-Request-ID 全链路追踪 | **✅ 已交付** | v0.3.0 |
+| **Phase 6** | **通用文档智能解析与防溢出自愈** | DOCX/PDF/XLSX/PPTX 提取、read_file 透明路由、Markdown 双模输出、大纲探测 | **✅ 已交付** | v0.4.0 |
 
 ---
 
@@ -162,6 +164,31 @@ flowchart LR
 
 ---
 
+## 📌 Phase 6: 通用文档智能解析与防溢出自愈 (Universal Document Extraction & Self-Healing Protocol) - `✅ 已交付 (v0.4.0)`
+
+> **目标**：基于 RFC 0002 规范，打破纯文本代码与富文本业务资产（技术规范、架构图讲稿、测试用例表、接口文档）的信息壁垒，引入纯 Python 轻量解析引擎，支持 DOCX、PDF、XLSX、PPTX 四大主流格式，默认提供 LLM 友好 Markdown 与原生文本双模输出、结构大纲毫秒级探测与 `read_file` 透明兜底路由。
+
+### 核心交付内容
+1. **轻量纯 Python 驱动标配化**：
+   - 引入 `pypdf>=5.0.0`, `python-docx>=1.1.0`, `openpyxl>=3.1.2`, `python-pptx>=1.0.0`；
+   - 零外部 C/系统二进制依赖，免除 Poppler/Office 运行时环境锁绑定。
+2. **四大格式解析适配与 Markdown 转换**：
+   - **PDF**：0-indexed 物理页流式定位，解析书签大纲目录树，无文本层扫描件防呆预警；
+   - **DOCX**：标题转 `#`、`##`，列表项目转 `- `，表格转 GitHub Flavored Markdown 表格，复杂节点平滑降级；
+   - **XLSX**：强制只读与数据流模式（`read_only=True, data_only=True`），切片保护并智能跳过空行，保留表头；
+   - **PPTX**：幻灯片切片与层次化形状提取，表格自动 Markdown 化，演讲者备注提取（`> 📝 Speaker Notes:`）。
+3. **防大模型幻觉自愈响应与透明路由**：
+   - 暴露专属工具 `read_document_file`（别名 `read_document`）与大纲探测工具 `inspect_document`（别名 `inspect_document_file`）；
+   - 在 `codexen/tools/file_tools.py:read_file` 接入透明静默转派与引导提示；
+   - 未指定分页参数时自适应返回第一分段，回传 `total_pages`、`next_page`、`has_more` 与精准自愈 `hint`。
+
+### 验收与验证标准
+* [x] 17 项全覆盖专项测试（`tests/test_document_tools.py`）验证真实二进制生成、解析、大纲探测、截断自愈与安全沙箱；
+* [x] 198 项全量单元测试与集成测试通过率 100%；
+* [x] `ruff` 语法校验与 `mypy` 静态类型检查 100% 通过（32 个核心源码文件 0 错误）。
+
+---
+
 ## 📋 里程碑核验清单 (Milestone Checklist)
 
 - [x] **2026-11-15: RFC 0001 正式立项入库**；
@@ -169,4 +196,5 @@ flowchart LR
 - [x] **Phase 2 动态 `.gitignore` 模块开发与单测覆盖**；
 - [x] **Phase 3 HITL 穿透授权协议接入与前端/控制台联动**；
 - [x] **Phase 4 防截断自愈与 `search_audit` 遥测全量上线**；
-- [x] **Phase 5 双层全链路可观测性、日志轮转与 174 项全量单测通过 (双仓累计 314 项单测全绿)**。
+- [x] **Phase 5 双层全链路可观测性、日志轮转与 174 项全量单测通过 (双仓累计 314 项单测全绿)**；
+- [x] **2026-11-16: RFC 0002 正式立项入库并全量实施交付 (Phase 6, v0.4.0, 198 项测试全绿)**。

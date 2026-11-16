@@ -10,6 +10,7 @@
 | 编号 | 标题 | 状态 | 适用版本 | 提出日期 | 核心主题 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **[RFC 0001](0001-resilient-async-and-adaptive-search.md)** | **弹性异步事件循环、自适应规则分层与防幻觉态势感知** | **Accepted / Living** | `>= 0.2.0` | 2026-11-15 | Worker 线程池非阻塞保底、项目 `.gitignore` 优先、HITL 授权穿透、分页自愈元数据 |
+| **[RFC 0002](0002-universal-document-extraction.md)** | **通用文档智能解析引擎与防溢出分段自愈协议** | **Implemented** | `>= 0.4.0` | 2026-11-16 | DOCX/PDF/XLSX/PPTX 提取、read_file 透明路由、Markdown 转换、结构大纲探测、防截断自愈 |
 | 📝 **[RFC 编写模板](template.md)** | **标准 RFC 撰写模板** | **Living** | - | - | 新增 RFC 提案时的标准结构与编写指南 |
 
 ---

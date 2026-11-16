@@ -302,6 +302,11 @@ class MCPCompletenessTests(unittest.TestCase):
         self.assertEqual(s2["status"], "success")
         self.assertEqual(s2["total_matches"], 1)
 
+    def test_document_tools_registered_and_available(self):
+        """Verify that RFC 0002 document tools and aliases are registered on MCP."""
+        for t in ["read_document_file", "read_document", "inspect_document", "inspect_document_file"]:
+            self.assertIn(t, self.tools)
+
 
 if __name__ == "__main__":
     unittest.main()
