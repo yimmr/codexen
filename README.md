@@ -63,7 +63,7 @@ flowchart TB
 
     subgraph ToolsLayer ["5. 本地开发全功能工具矩阵 (50+ MCP Tools)"]
         T_Workspace["项目与工作区<br/>• list_projects<br/>• create_project<br/>• reload_projects_config"]
-        T_Files["文件读写与精准编辑<br/>• read_file / read_multiple_files<br/>• write_file (增量/行切片)<br/>• edit_file_snippet (局部替换)"]
+        T_Files["文件读写与精准编辑<br/>• read_file / read_multiple_files<br/>• write_file (覆盖/追加/分块写入)<br/>• edit_file_snippet (大文件流式局部替换)"]
         T_Docs["通用文档智能解析<br/>• read_document_file (DOCX/PDF/XLSX/PPTX)<br/>• inspect_document (大纲探测)<br/>• read_file 透明路由保底"]
         T_Media["多模态视觉感知<br/>• read_media_file (原生 Image)<br/>• read/write_binary_file (Base64)"]
         T_Archive["归档与跨项目同步<br/>• copy_path (项目内/跨项目)<br/>• zip_archive (防 Zip-Slip/Bomb)"]
@@ -145,7 +145,7 @@ FastMCP 默认将 Python 列表转化为多个分散的 `TextContent` 块。许�
 | **文件读写与编辑** | `read_project_file` / `read_file` | 安全读取文件内容，支持行切片（`start_line`/`end_line`）与前导斜杠容错 |
 | | `read_multiple_files` / `batch_read_files`| 单次工具调用批量读取多个文件内容，极度节省 Agent 交互轮次 |
 | | `write_project_file` / `write_file` | 写入或新建文件，支持覆盖模式与追加模式（`append=True`） |
-| | `edit_file_snippet` | 精准替换文件中的指定代码片段（免全文件重写，省 Token 防误改） |
+| | `edit_file_snippet` | 精准替换文件中的指定代码片段（流式重写、原子落盘，任意大文件均可编辑；回执含变更行号，`include_hunk=True` 时附 ≤320 字符完整 diff，放不下则省略并提示 `git_diff`/`read_file`） |
 | | `list_files` / `list_directory` | 递归遍历项目目录树，支持 glob 模式匹配与扩展名过滤 |
 | | `get_file_info` | 获取文件大小、行数、最后修改时间等元数据 |
 | | `delete_file` / `delete_directory` | 安全删除文件或目录（非空目录支持 `recursive=True`） |
@@ -201,9 +201,9 @@ uv run --frozen python -m unittest discover tests -v
 
 执行结果：
 ```text
-============================ 201 passed in 27.21s =============================
+============================ 226 passed in 18.86s =============================
 ```
-**201 项自动化与端到端集成测试全量通过（配合底层 mcp-server-core 140 项测试，双仓共 341 项测试无缝通过）！**
+**226 项自动化与端到端集成测试全量通过（配合底层 mcp-server-core 140 项测试，双仓共 366 项测试无缝通过）！**
 
 ---
 

@@ -34,6 +34,7 @@ BASELINE_FALLBACK_IGNORED: list[str] = [
     "*.pyc", "*.pyo", "*.pyd", "*.exe", "*.dll", "*.so", "*.dylib", "*.pdb", "*.bin",
     "*.lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "uv.lock", "Cargo.lock",
     "*.map", "*.min.js", "*.min.css",
+    ".codexen_edit_*.tmp",
 ]
 
 DEFAULT_IGNORE_ENGINE = "pathspec"

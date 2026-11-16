@@ -1,9 +1,12 @@
 """Core filesystem operations: read, write, edit snippets, list, delete, and copy."""
 from __future__ import annotations
 
+import errno
 import fnmatch
 import os
 import shutil
+import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -493,6 +496,234 @@ def write_project_file(
     }
 
 
+EDIT_CHUNK_CHARS = 1_048_576
+EDIT_TEMP_PREFIX = ".codexen_edit_"
+EDIT_TEMP_SUFFIX = ".tmp"
+STALE_EDIT_TEMP_SECONDS = 3_600
+EDIT_REPLACE_RETRY_LIMIT = 6
+EDIT_REPLACE_RETRY_BASE_DELAY = 0.05
+EDIT_REPLACE_RETRY_MAX_DELAY = 0.30
+HUNK_MAX_CHARS = 320
+HUNK_CONTEXT_LINES = 2
+HUNK_CONTEXT_CHARS = 200
+
+
+def _is_transient_replace_error(error: OSError) -> bool:
+    """Return True for lock/permission failures worth retrying (not disk errors)."""
+    if isinstance(error, PermissionError):
+        return True
+    if getattr(error, "winerror", None) in (32, 33):  # sharing / lock violation
+        return True
+    return error.errno in (errno.EACCES, errno.EBUSY)
+
+
+def _atomic_replace_with_retry(src: Path, dst: Path) -> None:
+    """Atomically replace ``dst`` with ``src``, retrying transient lock failures.
+
+    Up to ``EDIT_REPLACE_RETRY_LIMIT`` retries with linear backoff (50..300 ms). Non
+    transient errors (disk full, read-only target, etc.) fail immediately.
+    """
+    for attempt in range(EDIT_REPLACE_RETRY_LIMIT + 1):
+        try:
+            os.replace(src, dst)
+            return
+        except OSError as error:
+            if attempt >= EDIT_REPLACE_RETRY_LIMIT or not _is_transient_replace_error(error):
+                raise
+            time.sleep(
+                min(
+                    EDIT_REPLACE_RETRY_BASE_DELAY * (attempt + 1),
+                    EDIT_REPLACE_RETRY_MAX_DELAY,
+                )
+            )
+
+
+def _split_block(text: str) -> list[str]:
+    """Split a snippet into display lines, dropping the trailing empty line."""
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+
+def _context_lines(text: str, limit: int, *, from_end: bool) -> list[str]:
+    """Take up to ``limit`` lines from either end of a captured context window."""
+    lines = text.split("\n")
+    if text.endswith("\n") and lines:
+        lines.pop()
+    if not lines:
+        return []
+    return lines[-limit:] if from_end else lines[:limit]
+
+
+def _build_snippet_hunk(
+    before: str, search_text: str, replace_text: str, after: str, start_line: int
+) -> tuple[str | None, str | None]:
+    """Render a faithful snippet diff for a single replacement, or omit it.
+
+    The hunk is all-or-nothing: it is returned only when the complete preview (all
+    changed lines, full line content, two context lines on each side) fits the budget.
+    Any clipping, line limiting or hard cut would make the hunk misleading, so in that
+    case ``None`` is returned together with an omission reason and the caller points the
+    Agent at ``git_diff`` / ``read_file`` for authoritative detail.
+    """
+    removed = _split_block(search_text)
+    added = _split_block(replace_text)
+    before_ctx = _context_lines(before, HUNK_CONTEXT_LINES, from_end=True)
+    after_ctx = _context_lines(after, HUNK_CONTEXT_LINES, from_end=False)
+    header = f"@@ -{start_line},{len(removed)} +{start_line},{len(added)} @@"
+
+    parts = [header]
+    parts.extend(f" {line}" for line in before_ctx)
+    parts.extend(f"- {line}" for line in removed)
+    parts.extend(f"+ {line}" for line in added)
+    parts.extend(f" {line}" for line in after_ctx)
+    hunk = "\n".join(parts)
+    if len(hunk) <= HUNK_MAX_CHARS:
+        return hunk, None
+    return None, "exceeds_budget"
+
+
+def _cleanup_stale_edit_temps(
+    directory: Path, max_age_seconds: int = STALE_EDIT_TEMP_SECONDS
+) -> int:
+    """Best-effort removal of orphaned edit temp files left behind by a hard crash.
+
+    Only files matching our own ``.codexen_edit_*.tmp`` prefix are considered, and only
+    when older than ``max_age_seconds`` so that a concurrently running edit in the same
+    directory is never disturbed. Returns the number of files removed.
+    """
+    removed = 0
+    try:
+        now = time.time()
+        for candidate in directory.glob(f"{EDIT_TEMP_PREFIX}*{EDIT_TEMP_SUFFIX}"):
+            try:
+                if now - candidate.stat().st_mtime >= max_age_seconds:
+                    candidate.unlink()
+                    removed += 1
+            except OSError:
+                continue
+    except OSError:
+        return removed
+    return removed
+
+
+def _replace_snippet_streaming(
+    src_path: Path,
+    dst: Any,
+    search_text: str,
+    replace_text: str,
+    replace_all: bool,
+    encoding: str,
+    chunk_chars: int,
+    include_hunk: bool,
+) -> tuple[int, list[dict[str, int]] | None, str | None, str | None]:
+    """Stream-copy ``src_path`` into ``dst`` while replacing snippets in O(chunk) memory.
+
+    The reader keeps a sliding window of ``len(search_text) - 1`` characters so a match
+    spanning two read chunks is still found exactly once. Only the first occurrence is
+    replaced when ``replace_all`` is False; later occurrences are still counted so the
+    caller can reject ambiguous edits without a second full pass.
+
+    Returns ``(occurrence_count, changed_lines, hunk, hunk_omitted_reason)``. Line numbers
+    and the snippet hunk are only produced when exactly one replacement happens. The hunk
+    is omitted (never truncated) when the faithful preview does not fit the budget.
+    """
+    match_len = len(search_text)
+    carry = ""
+    count = 0
+    first_replaced = False
+    out_newlines = 0
+    tail_context = ""
+    after_context = ""
+    after_newlines = 0
+    capture_after = False
+    changed_lines: list[dict[str, int]] | None = None
+    hunk_text: str | None = None
+    hunk_omitted: str | None = None
+    first_start_line = 0
+    first_end_line = 0
+    first_before_context = ""
+
+    def _copy(segment: str) -> None:
+        nonlocal out_newlines, tail_context, after_context, after_newlines
+        if not segment:
+            return
+        dst.write(segment)
+        out_newlines += segment.count("\n")
+        if not include_hunk:
+            return
+        if capture_after:
+            remaining = HUNK_CONTEXT_CHARS - len(after_context)
+            if remaining > 0 and after_newlines < HUNK_CONTEXT_LINES:
+                piece = segment[:remaining]
+                after_context += piece
+                after_newlines += piece.count("\n")
+        else:
+            tail_context = (tail_context + segment)[-HUNK_CONTEXT_CHARS:]
+
+    def _write_replacement() -> None:
+        nonlocal out_newlines, capture_after
+        dst.write(replace_text)
+        out_newlines += replace_text.count("\n")
+        if include_hunk:
+            capture_after = True
+
+    with open(src_path, encoding=encoding, errors="strict", newline="") as src:
+        while True:
+            chunk = src.read(chunk_chars)
+            eof = not chunk
+            buf = carry + chunk
+            carry = ""
+            # Anything before `cut` is fully decidable using the current window.
+            cut = len(buf) if eof else max(0, len(buf) - (match_len - 1))
+            written = 0
+            pos = 0
+            while True:
+                idx = buf.find(search_text, pos)
+                if idx == -1:
+                    break
+                if idx + match_len > len(buf):
+                    # Match straddles the window tail: leave it for the next round.
+                    break
+                if replace_all or not first_replaced:
+                    _copy(buf[written:idx])
+                    start_line = out_newlines + 1
+                    _write_replacement()
+                    if count == 0:
+                        added_newlines = replace_text.count("\n")
+                        end_line = start_line + added_newlines
+                        if replace_text.endswith("\n") and added_newlines:
+                            end_line -= 1
+                        first_start_line = start_line
+                        first_end_line = max(start_line, end_line)
+                        if include_hunk:
+                            first_before_context = tail_context
+                    written = idx + match_len
+                    first_replaced = True
+                count += 1
+                pos = idx + match_len
+
+            keep_from = max(cut, written)
+            _copy(buf[written:keep_from])
+            carry = buf[keep_from:]
+            if eof:
+                break
+
+    if count == 1:
+        changed_lines = [{"start": first_start_line, "end": first_end_line}]
+        if include_hunk:
+            hunk_text, hunk_omitted = _build_snippet_hunk(
+                before=first_before_context,
+                search_text=search_text,
+                replace_text=replace_text,
+                after=after_context,
+                start_line=first_start_line,
+            )
+
+    return count, changed_lines, hunk_text, hunk_omitted
+
+
 def edit_project_file_snippet(
     project: ProjectConfig,
     relative_path: str,
@@ -500,34 +731,124 @@ def edit_project_file_snippet(
     replace_text: str,
     replace_all: bool = False,
     encoding: str = "utf-8",
+    chunk_chars: int = EDIT_CHUNK_CHARS,
+    include_hunk: bool = False,
 ) -> dict[str, Any]:
-    """Replace an exact substring snippet in a project file."""
+    """Replace an exact substring snippet in a project file of any size.
+
+    The file is rewritten through a sibling temporary file and swapped in atomically,
+    so a failed or ambiguous edit never leaves a partially edited file behind. There is
+    no read-size gate: arbitrarily large text files are edited with bounded memory.
+    """
     if project.read_only:
         raise ReadOnlyProjectError(
             f"Project '{project.name}' is configured as read-only. Edit operation is rejected."
         )
 
     assert_not_sensitive_path(relative_path, "Editing")
+    ensure_project_accessible(project)
 
     if not search_text:
         raise FileServiceError("search_text cannot be empty.")
 
-    raw_content = read_project_file(project, relative_path, encoding=encoding, auto_paginate=False)
-    current_content = raw_content.get("content", "") if isinstance(raw_content, dict) else raw_content
-
-    count = current_content.count(search_text)
-    if count == 0:
+    file_path = safe_resolve_path(project.root, relative_path)
+    if not file_path.exists():
+        raise FileNotFoundError(
+            f"File not found: '{relative_path}' in project '{project.name}' (Root: {project.root})"
+        )
+    if file_path.is_dir():
         raise FileServiceError(
-            f"search_text not found in file '{relative_path}'. Edit aborted."
+            f"Cannot edit '{relative_path}': Path is a directory, not a regular file."
+        )
+    if is_binary_file(file_path):
+        raise FileServiceError(
+            f"Cannot edit '{relative_path}': the file looks binary (NUL bytes detected). "
+            f"Use write_binary_file for binary payloads."
         )
 
-    if count > 1 and not replace_all:
-        raise FileServiceError(
-            f"search_text occurs {count} times in '{relative_path}'. Specify replace_all=True or provide more unique context."
-        )
+    # Best-effort sweep of orphaned temp files from a previous crash (same directory,
+    # older than an hour). Never touches a concurrent edit's live temp file.
+    _cleanup_stale_edit_temps(file_path.parent)
 
-    new_content = current_content.replace(search_text, replace_text, -1 if replace_all else 1)
-    return write_project_file(project, relative_path, new_content, overwrite=True, encoding=encoding)
+    tmp_fd, tmp_name = tempfile.mkstemp(
+        prefix=EDIT_TEMP_PREFIX, suffix=EDIT_TEMP_SUFFIX, dir=str(file_path.parent)
+    )
+    tmp_path = Path(tmp_name)
+    committed = False
+    try:
+        try:
+            dst_handle = os.fdopen(tmp_fd, "w", encoding=encoding, errors="strict", newline="")
+        except Exception:
+            os.close(tmp_fd)
+            raise
+        with dst_handle as dst:
+            occurrences, changed_lines, hunk, hunk_omitted = _replace_snippet_streaming(
+                src_path=file_path,
+                dst=dst,
+                search_text=search_text,
+                replace_text=replace_text,
+                replace_all=replace_all,
+                encoding=encoding,
+                chunk_chars=max(1, chunk_chars),
+                include_hunk=include_hunk,
+            )
+
+        if occurrences == 0:
+            raise FileServiceError(
+                f"search_text not found in file '{relative_path}'. Edit aborted."
+            )
+        if occurrences > 1 and not replace_all:
+            raise FileServiceError(
+                f"search_text occurs {occurrences} times in '{relative_path}'. Specify replace_all=True or provide more unique context."
+            )
+
+        try:
+            shutil.copymode(file_path, tmp_path)
+        except OSError:
+            pass
+        _atomic_replace_with_retry(tmp_path, file_path)
+        committed = True
+    except UnicodeDecodeError as e:
+        raise FileServiceError(
+            f"Failed to edit '{relative_path}': file is not valid {encoding} text ({e})."
+        ) from e
+    except OSError as e:
+        raise FileServiceError(f"Failed to edit file '{relative_path}': {e}") from e
+    finally:
+        if not committed:
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
+    stat = file_path.stat()
+    rel = str(file_path.relative_to(project.root)).replace("\\", "/")
+    result: dict[str, Any] = {
+        "status": "success",
+        "action": "edited",
+        "project": project.name,
+        "relative_path": rel,
+        "size_bytes": stat.st_size,
+        "occurrences_replaced": occurrences if replace_all else 1,
+        "chars_written": (occurrences if replace_all else 1) * len(replace_text),
+        "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+    }
+    if changed_lines:
+        result["changed_lines"] = changed_lines
+        first, last = changed_lines[0]["start"], changed_lines[0]["end"]
+        result["hint"] = (
+            f"Edit applied at line {first}." if first == last else f"Edit applied at lines {first}-{last}."
+        )
+    if include_hunk and hunk is not None:
+        result["hunk"] = hunk
+    elif include_hunk and changed_lines:
+        result["hunk_omitted"] = hunk_omitted or "exceeds_budget"
+        first, last = changed_lines[0]["start"], changed_lines[0]["end"]
+        result["hint"] = (
+            f"{result.get('hint', '')} Hunk omitted ({result['hunk_omitted']}); inspect with "
+            f"git_diff or read_file(start_line={first}, end_line={last})."
+        ).strip()
+    return result
 
 
 def get_project_file_info(project: ProjectConfig, relative_path: str) -> dict[str, Any]:

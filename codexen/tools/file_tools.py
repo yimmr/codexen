@@ -158,8 +158,12 @@ def register_file_crud_tools(ctx: ToolContext) -> None:
         search_text: str = "",
         replace_text: str = "",
         replace_all: bool = False,
+        include_hunk: bool = False,
     ) -> dict[str, Any]:
         """Replace a specific text snippet in an existing project file without rewriting the entire file.
+
+        Works on files of any size: the edit is streamed with bounded memory and committed
+        atomically, so large logs/datasets no longer hit the read-size limit.
 
         Args:
             project_id: The ID/name of the configured project.
@@ -169,6 +173,7 @@ def register_file_crud_tools(ctx: ToolContext) -> None:
             search_text: The exact substring to locate.
             replace_text: The new replacement string.
             replace_all: If True, replaces all occurrences; if False, replaces only if exactly one occurrence exists.
+            include_hunk: If True, the success receipt includes a compact diff hunk (≤320 chars) for verification. The hunk is all-or-nothing: when the faithful preview does not fit, it is omitted (`hunk_omitted`) and the hint points to git_diff / read_file instead of returning a misleading partial diff.
         """
         proj = ctx.resolve_project(project_id=project_id, project_name=project_name)
         target_path = normalize_relative_path(relative_path or path)
@@ -179,6 +184,7 @@ def register_file_crud_tools(ctx: ToolContext) -> None:
             replace_text=replace_text,
             replace_all=replace_all,
             encoding=ctx.config_mgr.settings.default_encoding,
+            include_hunk=include_hunk,
         )
 
     @ctx.register_tool()

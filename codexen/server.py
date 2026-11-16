@@ -54,7 +54,7 @@ def codexen_payload_hook(tool_name: str, arguments: dict[str, Any]) -> dict[str,
             changed = True
 
     if tool_name == "edit_file_snippet":
-        for k in ("search_block", "replacement_block"):
+        for k in ("search_text", "replace_text", "search_block", "replacement_block"):
             if k in modified and isinstance(modified[k], str) and len(modified[k]) > 300:
                 snippet = modified[k]
                 preview = snippet[:80].replace("\n", " ").replace("\r", "")
