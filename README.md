@@ -61,9 +61,10 @@ flowchart TB
         HITL["人机协同审核 (Human-in-the-Loop)<br/>• 高危破坏性指令硬阻断 (format/diskpart/reg)<br/>• 敏感指令弹窗确认 (rmdir/git push/npm publish)"]
     end
 
-    subgraph ToolsLayer ["5. 本地开发全功能工具矩阵 (40+ MCP Tools)"]
+    subgraph ToolsLayer ["5. 本地开发全功能工具矩阵 (50+ MCP Tools)"]
         T_Workspace["项目与工作区<br/>• list_projects<br/>• create_project<br/>• reload_projects_config"]
         T_Files["文件读写与精准编辑<br/>• read_file / read_multiple_files<br/>• write_file (增量/行切片)<br/>• edit_file_snippet (局部替换)"]
+        T_Docs["通用文档智能解析<br/>• read_document_file (DOCX/PDF/XLSX/PPTX)<br/>• inspect_document (大纲探测)<br/>• read_file 透明路由保底"]
         T_Media["多模态视觉感知<br/>• read_media_file (原生 Image)<br/>• read/write_binary_file (Base64)"]
         T_Archive["归档与跨项目同步<br/>• copy_path (项目内/跨项目)<br/>• zip_archive (防 Zip-Slip/Bomb)"]
         T_Terminal["终端与持续开发闭环<br/>• run_terminal_command (智能截断)<br/>• search_code (正则/代码定位)<br/>• git_status / git_diff / git_log"]
@@ -148,6 +149,8 @@ FastMCP 默认将 Python 列表转化为多个分散的 `TextContent` 块。许�
 | | `list_files` / `list_directory` | 递归遍历项目目录树，支持 glob 模式匹配与扩展名过滤 |
 | | `get_file_info` | 获取文件大小、行数、最后修改时间等元数据 |
 | | `delete_file` / `delete_directory` | 安全删除文件或目录（非空目录支持 `recursive=True`） |
+| **通用文档智能解析** | `read_document_file` / `read_document` | 提取 DOCX、PDF、XLSX、PPTX 结构化 Markdown 与纯文本，支持双轨制精细分页与防溢出自愈 |
+| | `inspect_document` / `inspect_document_file` | 毫秒级探测文档结构大纲、Excel 工作表清单、PDF 书签目录与核心元数据 |
 | **多模态与二进制** | `read_media_file` / `read_image_file` | 原生包装返回 FastMCP `Image`，供多模态视觉 Agent 直接看图审查 |
 | | `read_binary_file` / `write_binary_file` | 标准 Base64 编解码读写二进制文件（字体、音频、压缩包等） |
 | **归档与跨项目同步**| `copy_path` / `copy_directory` | 项目内复制或**跨项目同步**代码树（如从通用模板库同步到新工程） |
@@ -198,11 +201,9 @@ uv run --frozen python -m unittest discover tests -v
 
 执行结果：
 ```text
-Ran 174 tests in 16.58s
-
-OK (skipped=1)
+============================ 201 passed in 27.21s =============================
 ```
-**174 项自动化与端到端集成测试全量通过（配合底层 mcp-server-core 140 项测试，双仓共 314 项测试无缝通过）！**
+**201 项自动化与端到端集成测试全量通过（配合底层 mcp-server-core 140 项测试，双仓共 341 项测试无缝通过）！**
 
 ---
 

@@ -249,10 +249,10 @@ curl -s http://127.0.0.1:8788/health
 curl -s https://codexen.yourdomain.com/health
 # 期望返回: {"status":"healthy"}
 
-# 3. 运行全量自动化测试基线 (174 项测试)
+# 3. 运行全量自动化测试基线 (201 项测试)
 # 本地 editable mcp-server-core 环境使用 --frozen；全新环境按 §1.2 先 uv sync
 uv run --frozen python -m unittest discover tests -v
-# 期望返回: Ran 174 tests ... OK (skipped=1)
+# 期望返回: Ran 201 tests ... OK
 ```
 
 ---
