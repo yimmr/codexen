@@ -7,7 +7,7 @@
 | **标题** | 通用文档智能解析引擎与防溢出分段自愈协议 |
 | **作者** | Codexen Architecture & Agent Tooling Group |
 | **提出日期** | 2026-11-16 |
-| **当前状态** | **Approved by Interview / Ready for Implementation** |
+| **当前状态** | **Implemented / Delivered in v0.4.0** |
 | **适用版本** | Codexen >= 0.4.0 |
 | **关联模块** | `codexen/core/document.py`, `codexen/tools/document_tools.py`, `codexen/tools/file_tools.py`, `codexen/tools/__init__.py`, `pyproject.toml` |
 
