@@ -54,18 +54,41 @@ def register_file_crud_tools(ctx: ToolContext) -> None:
         target_path = normalize_relative_path(relative_path or path)
         suffix = Path(target_path).suffix.lower()
         if suffix in DOCUMENT_EXTENSIONS:
+            has_line_range = start_line > 0 or end_line > 0
+            s_page = start_line if start_line > 0 else 0
+            e_page = end_line if end_line > 0 else 0
+            s_row = start_line if start_line > 0 else 0
+            m_rows = (end_line - start_line + 1) if (end_line >= start_line and start_line > 0) else 100
+            s_para = start_line if start_line > 0 else 0
+            m_para = (end_line - start_line + 1) if (end_line >= start_line and start_line > 0) else 50
+
             doc_res = extract_document_content(
                 project=proj,
                 relative_path=target_path,
-                page=1,
+                page=1 if not has_line_range else 0,
                 page_count=10,
+                start_page=s_page,
+                end_page=e_page,
+                start_row=s_row,
+                max_rows=m_rows,
+                start_slide=s_page,
+                end_slide=e_page,
+                start_paragraph=s_para,
+                max_paragraphs=m_para,
                 max_chars=ctx.config_mgr.settings.max_read_chars,
                 auto_paginate=True,
             )
-            doc_res["hint"] = (
-                f"Notice: '{target_path}' is a rich document file. Codexen transparently extracted the first 10 pages for you. "
-                f"For advanced pagination, sheet selection, or slide slicing, please call the dedicated 'read_document_file' (or 'inspect_document') tool."
-            )
+            if has_line_range:
+                range_str = f"lines {start_line}-{end_line or 'end'}"
+                doc_res["hint"] = (
+                    f"Notice: '{target_path}' is a rich document file. Codexen transparently extracted the requested range ({range_str}) mapped to document units. "
+                    f"For advanced pagination, sheet selection, or slide slicing, please call the dedicated 'read_document_file' (or 'inspect_document') tool."
+                )
+            else:
+                doc_res["hint"] = (
+                    f"Notice: '{target_path}' is a rich document file. Codexen transparently extracted the first 10 pages/segments for you. "
+                    f"For advanced pagination, sheet selection, or slide slicing, please call the dedicated 'read_document_file' (or 'inspect_document') tool."
+                )
             return doc_res
 
         return _read_core(

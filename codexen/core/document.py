@@ -167,11 +167,20 @@ def _extract_pdf(
         except Exception as p_err:
             txt = f"[Error extracting page {p_no}: {p_err}]"
 
+        img_count = 0
+        try:
+            if hasattr(page_obj, "images"):
+                img_count = len(page_obj.images)
+        except Exception:
+            img_count = 0
+
+        img_annotation = f"\n\n*[Image: {img_count} embedded image(s) on Page {p_no}]*" if img_count > 0 else ""
+
         total_extracted_chars += len(txt)
         if output_format == "raw":
-            page_blocks.append(f"[Page {p_no}/{total_pages}]\n{txt}")
+            page_blocks.append(f"[Page {p_no}/{total_pages}]\n{txt}{img_annotation}")
         else:
-            page_blocks.append(f"--- Page {p_no} / {total_pages} ---\n\n{txt}")
+            page_blocks.append(f"--- Page {p_no} / {total_pages} ---\n\n{txt}{img_annotation}")
 
     content = "\n\n".join(page_blocks)
 
@@ -262,10 +271,15 @@ def _extract_docx(
         outline = []
 
     if outline_only:
+        total_p_and_tbl = 0
+        try:
+            total_p_and_tbl = sum(1 for child in doc.element.body if child.tag.endswith(("p", "tbl")))
+        except Exception:
+            total_p_and_tbl = len(doc.paragraphs)
         return {
             "document_type": "docx",
-            "total_pages": max(1, (len(doc.paragraphs) + 49) // 50),
-            "total_paragraphs": len(doc.paragraphs),
+            "total_pages": max(1, (total_p_and_tbl + 49) // 50),
+            "total_paragraphs": total_p_and_tbl,
             "metadata": metadata,
             "outline": outline,
             "available_sheets": [],
@@ -285,15 +299,19 @@ def _extract_docx(
         elements = [("p", p) for p in doc.paragraphs]
 
     total_elements = len(elements)
-    chunk_size = max_paragraphs if max_paragraphs > 0 else 50
-    total_pages = max(1, (total_elements + chunk_size - 1) // chunk_size)
+    per_page = 50
+    total_pages = max(1, (total_elements + per_page - 1) // per_page)
 
     if start_paragraph > 0:
         s_idx = start_paragraph - 1
-        e_idx = s_idx + chunk_size
+        chunk_len = max_paragraphs if max_paragraphs > 0 else (per_page * max(1, page_count))
+        e_idx = s_idx + chunk_len
     else:
-        s_idx = (page - 1) * chunk_size
-        e_idx = s_idx + chunk_size
+        p_num = max(1, page)
+        p_cnt = max(1, page_count)
+        s_idx = (p_num - 1) * per_page
+        chunk_len = max_paragraphs if max_paragraphs > 0 else (per_page * p_cnt)
+        e_idx = s_idx + chunk_len
 
     s_idx = max(0, min(s_idx, max(0, total_elements - 1))) if total_elements > 0 else 0
     e_idx = min(total_elements, max(s_idx + 1, e_idx))
@@ -305,28 +323,41 @@ def _extract_docx(
         try:
             if elem_type == "p":
                 text = elem.text.strip()
-                if not text:
+                has_drawing = False
+                try:
+                    if hasattr(elem, "_p") and elem._p is not None and "drawing" in elem._p.xml:
+                        has_drawing = True
+                except Exception:
+                    has_drawing = False
+
+                if not text and not has_drawing:
                     continue
+
+                if not text and has_drawing:
+                    rendered_blocks.append("*[Image: Embedded graphic]*")
+                    continue
+
+                drawing_suffix = " *[Image: Embedded graphic]*" if has_drawing else ""
                 if output_format == "raw":
-                    rendered_blocks.append(text)
+                    rendered_blocks.append(f"{text}{drawing_suffix}")
                 else:
                     style_name = (elem.style.name if elem.style and elem.style.name else "").lower()
                     if style_name.startswith("heading 1"):
-                        rendered_blocks.append(f"# {text}")
+                        rendered_blocks.append(f"# {text}{drawing_suffix}")
                     elif style_name.startswith("heading 2"):
-                        rendered_blocks.append(f"## {text}")
+                        rendered_blocks.append(f"## {text}{drawing_suffix}")
                     elif style_name.startswith("heading 3"):
-                        rendered_blocks.append(f"### {text}")
+                        rendered_blocks.append(f"### {text}{drawing_suffix}")
                     elif style_name.startswith("heading 4"):
-                        rendered_blocks.append(f"#### {text}")
+                        rendered_blocks.append(f"#### {text}{drawing_suffix}")
                     elif style_name == "title":
-                        rendered_blocks.append(f"# {text}")
+                        rendered_blocks.append(f"# {text}{drawing_suffix}")
                     elif style_name == "subtitle":
-                        rendered_blocks.append(f"*{text}*")
+                        rendered_blocks.append(f"*{text}*{drawing_suffix}")
                     elif "bullet" in style_name:
-                        rendered_blocks.append(f"- {text}")
+                        rendered_blocks.append(f"- {text}{drawing_suffix}")
                     else:
-                        rendered_blocks.append(text)
+                        rendered_blocks.append(f"{text}{drawing_suffix}")
             elif elem_type == "tbl":
                 # Convert Table to Markdown or TSV
                 t_rows: list[list[str]] = []
@@ -350,12 +381,15 @@ def _extract_docx(
 
     content = "\n\n".join(rendered_blocks)
 
+    ret_start_page = (s_idx // per_page) + 1
+    ret_end_page = max(ret_start_page, min(total_pages, (e_idx + per_page - 1) // per_page))
+
     return {
         "document_type": "docx",
         "total_pages": total_pages,
         "total_paragraphs": total_elements,
-        "returned_start_page": (s_idx // chunk_size) + 1,
-        "returned_end_page": max((s_idx // chunk_size) + 1, (e_idx + chunk_size - 1) // chunk_size),
+        "returned_start_page": ret_start_page,
+        "returned_end_page": ret_end_page,
         "returned_start_paragraph": s_idx + 1,
         "returned_end_paragraph": e_idx,
         "content": content,
@@ -372,6 +406,8 @@ def _extract_docx(
 def _extract_xlsx(
     file_path: Path,
     sheet_name: str = "",
+    page: int = 1,
+    page_count: int = 10,
     start_row: int = 0,
     max_rows: int = 100,
     output_format: str = "markdown",
@@ -411,6 +447,7 @@ def _extract_xlsx(
             return {
                 "document_type": "xlsx",
                 "total_pages": len(sheets),
+                "total_sheets": len(sheets),
                 "metadata": metadata,
                 "outline": outline,
                 "available_sheets": sheets,
@@ -424,11 +461,17 @@ def _extract_xlsx(
             )
 
         ws = wb[target_sheet]
-        s_row = max(1, start_row)
         limit_rows = max(1, max_rows)
+        if start_row > 0:
+            s_row = start_row
+            cur_page = ((s_row - 1) // limit_rows) + 1
+        else:
+            cur_page = max(1, page)
+            s_row = (cur_page - 1) * limit_rows + 1
+
         e_row = s_row + limit_rows - 1
 
-        # Fetch header row if start_row > 1 to preserve Markdown table structure
+        # Fetch header row if s_row > 1 to preserve Markdown table structure
         header_row_vals: list[str] = []
         if s_row > 1:
             try:
@@ -460,6 +503,13 @@ def _extract_xlsx(
             if ws.max_row and ws.max_row > e_row:
                 has_more_rows = True
 
+        total_sheet_pages = 1
+        if ws.max_row and ws.max_row > 0:
+            total_sheet_pages = max(1, (ws.max_row + limit_rows - 1) // limit_rows)
+        else:
+            total_sheet_pages = cur_page if not has_more_rows else (cur_page + 1)
+        total_sheet_pages = max(total_sheet_pages, cur_page)
+
         if output_format == "raw":
             lines = [f"[Sheet: {target_sheet} (Rows {s_row}-{actual_end_row})]"]
             for r in data_rows:
@@ -477,10 +527,11 @@ def _extract_xlsx(
 
         return {
             "document_type": "xlsx",
-            "total_pages": len(sheets),
+            "total_pages": total_sheet_pages,
+            "total_sheets": len(sheets),
             "sheet_name": target_sheet,
-            "returned_start_page": s_row,
-            "returned_end_page": actual_end_row,
+            "returned_start_page": cur_page,
+            "returned_end_page": cur_page,
             "returned_start_row": s_row,
             "returned_end_row": actual_end_row,
             "has_more_rows": has_more_rows,
@@ -625,6 +676,9 @@ def _extract_pptx(
                             para_lines.append(f"{indent}- {p_txt}")
                     if para_lines:
                         body_elements.append("\n".join(para_lines))
+                elif getattr(shape, "shape_type", None) == 13 or hasattr(shape, "image"):
+                    pic_name = getattr(shape, "name", "Picture")
+                    body_elements.append(f"*[Image: {pic_name} on Slide {s_no}]*")
             except Exception:
                 continue
 
@@ -754,6 +808,8 @@ def read_project_document(
         raw_res = _extract_xlsx(
             file_path=file_path,
             sheet_name=sheet_name,
+            page=page,
+            page_count=page_count,
             start_row=start_row,
             max_rows=max_rows,
             output_format=format,
@@ -775,7 +831,7 @@ def read_project_document(
     doc_type = raw_res["document_type"]
 
     if outline_only:
-        return {
+        out_res = {
             "status": "success",
             "project": project.name,
             "relative_path": relative_path,
@@ -788,6 +844,9 @@ def read_project_document(
             "truncated": False,
             "hint": f"Outline successfully generated for '{relative_path}'. Call read_document_file to read full content.",
         }
+        if "total_sheets" in raw_res:
+            out_res["total_sheets"] = raw_res["total_sheets"]
+        return out_res
 
     content = raw_res.get("content", "")
     total_pages = raw_res.get("total_pages", 0)
@@ -802,15 +861,17 @@ def read_project_document(
     if doc_type == "xlsx":
         has_more = raw_res.get("has_more_rows", False)
         target_sheet = raw_res.get("sheet_name", "")
+        ret_s_row = raw_res.get("returned_start_row", 1)
+        ret_e_row = raw_res.get("returned_end_row", 1)
         if has_more:
             truncated = True
             truncation_reason = "max_rows_limit_reached"
-            next_start_row = returned_end + 1
-            next_page = next_start_row
+            next_start_row = ret_e_row + 1
+            next_page = returned_end + 1
             hint = (
-                f"Document truncated: Showing rows {returned_start}-{returned_end} of sheet '{target_sheet}'. "
+                f"Document truncated: Showing rows {ret_s_row}-{ret_e_row} of sheet '{target_sheet}'. "
                 f"Call read_document_file(project_id='{project.name}', relative_path='{relative_path}', "
-                f"sheet_name='{target_sheet}', start_row={next_start_row}, max_rows={max_rows}) to read the next segment."
+                f"sheet_name='{target_sheet}', page={next_page}) or with start_row={next_start_row}, max_rows={max_rows} to read the next segment."
             )
         else:
             hint = f"Full content of sheet '{target_sheet}' successfully retrieved."
@@ -883,6 +944,19 @@ def read_project_document(
         "next_page": next_page,
         "hint": hint,
     }
+
+    if "total_sheets" in raw_res:
+        payload["total_sheets"] = raw_res["total_sheets"]
+    if "sheet_name" in raw_res:
+        payload["sheet_name"] = raw_res["sheet_name"]
+    if "returned_start_row" in raw_res:
+        payload["returned_start_row"] = raw_res["returned_start_row"]
+    if "returned_end_row" in raw_res:
+        payload["returned_end_row"] = raw_res["returned_end_row"]
+    if "returned_start_paragraph" in raw_res:
+        payload["returned_start_paragraph"] = raw_res["returned_start_paragraph"]
+    if "returned_end_paragraph" in raw_res:
+        payload["returned_end_paragraph"] = raw_res["returned_end_paragraph"]
 
     if "warning" in raw_res:
         payload["warning"] = raw_res["warning"]

@@ -463,6 +463,80 @@ permissions:
         self.assertIn("### Slide 1", pptx_res["content"])
         self.assertIn("Notice: 'docs/slides.pptx' is a rich document file", pptx_res["hint"])
 
+    def test_xlsx_universal_page_pagination(self) -> None:
+        """Test XLSX reading with universal page parameter (page=1, page=2) without specifying start_row."""
+        # Page 1 (rows 1-100)
+        res1 = self.tools["read_document_file"](
+            project_id="core_proj",
+            relative_path="docs/metrics.xlsx",
+            page=1,
+            max_rows=100,
+        )
+        self.assertEqual(res1["status"], "success")
+        self.assertEqual(res1["returned_start_page"], 1)
+        self.assertEqual(res1["returned_end_page"], 1)
+        self.assertEqual(res1["returned_start_row"], 1)
+        self.assertEqual(res1["returned_end_row"], 100)
+        self.assertEqual(res1["total_pages"], 2)
+        self.assertTrue(res1["truncated"])
+        self.assertEqual(res1["next_page"], 2)
+
+        # Page 2 (rows 101-151)
+        res2 = self.tools["read_document_file"](
+            project_id="core_proj",
+            relative_path="docs/metrics.xlsx",
+            page=2,
+            max_rows=100,
+        )
+        self.assertEqual(res2["status"], "success")
+        self.assertEqual(res2["returned_start_page"], 2)
+        self.assertEqual(res2["returned_end_page"], 2)
+        self.assertEqual(res2["returned_start_row"], 101)
+        self.assertEqual(res2["returned_end_row"], 151)
+        self.assertFalse(res2["has_more"])
+        self.assertIn("| M100 | ResponseTime_100 |", res2["content"])
+        self.assertIn("| M150 | ResponseTime_150 |", res2["content"])
+
+    def test_read_file_line_range_routing(self) -> None:
+        """Test read_file with start_line and end_line properly routed to document slice."""
+        # PDF range routing
+        pdf_res = self.tools["read_file"](
+            project_id="core_proj",
+            relative_path="docs/spec.pdf",
+            start_line=11,
+            end_line=15,
+        )
+        self.assertEqual(pdf_res["status"], "success")
+        self.assertEqual(pdf_res["returned_start_page"], 11)
+        self.assertEqual(pdf_res["returned_end_page"], 15)
+        self.assertIn("--- Page 11 / 15 ---", pdf_res["content"])
+        self.assertIn("--- Page 15 / 15 ---", pdf_res["content"])
+        self.assertNotIn("--- Page 1 / 15 ---", pdf_res["content"])
+        self.assertIn("lines 11-15", pdf_res["hint"])
+
+        # XLSX range routing
+        xlsx_res = self.tools["read_file"](
+            project_id="core_proj",
+            relative_path="docs/metrics.xlsx",
+            start_line=101,
+            end_line=150,
+        )
+        self.assertEqual(xlsx_res["status"], "success")
+        self.assertEqual(xlsx_res["returned_start_row"], 101)
+        self.assertIn("| M100 | ResponseTime_100 |", xlsx_res["content"])
+
+    def test_docx_page_count_pagination(self) -> None:
+        """Test DOCX page_count reads multiple logical pages."""
+        res = self.tools["read_document_file"](
+            project_id="core_proj",
+            relative_path="docs/architecture.docx",
+            page=1,
+            page_count=2,
+        )
+        self.assertEqual(res["status"], "success")
+        self.assertEqual(res["returned_start_page"], 1)
+        self.assertIn("# Architecture Specification", res["content"])
+
     # ========================================================================
     # 6. Security & Edge Case Handling
     # ========================================================================
