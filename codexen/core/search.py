@@ -246,11 +246,17 @@ def search_project_code(
             try:
                 st_size = file_path.stat().st_size
                 if st_size > max_file_size_bytes:
+                    suggested_mb = min(50, int(st_size / (1024 * 1024)) + 1)
+                    limit_mb = round(max_file_size_bytes / (1024 * 1024))
                     large_files_skipped.append({
                         "file": rel_file,
                         "size_bytes": st_size,
                         "size_mb": round(st_size / (1024 * 1024), 2),
-                        "reason": f"Exceeded max_file_size_mb limit ({round(max_file_size_bytes / (1024 * 1024))}MB)",
+                        "reason": (
+                            f"Exceeded max_file_size_mb limit ({limit_mb}MB). "
+                            f"To inspect this file, re-run search_code with max_file_size_mb={suggested_mb}, "
+                            f"or inspect targeted segments using read_file with start_line and end_line."
+                        ),
                     })
                     continue
             except OSError:

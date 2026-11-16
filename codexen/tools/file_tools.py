@@ -34,6 +34,8 @@ def register_file_crud_tools(ctx: ToolContext) -> None:
     ) -> dict[str, Any] | str:
         """Read a UTF-8 text file within a project. The path cannot escape the project root boundary.
 
+        NOTICE: For large files (e.g. >100KB, logs, or datasets), do NOT read full file at once to avoid token limit overflow. ALWAYS specify start_line and end_line (e.g. start_line=1, end_line=500) to inspect line ranges safely. Codexen supports high-performance streaming line slices on arbitrarily large files.
+
         Args:
             project_id: The ID/name of the configured project (e.g. 'literary_workflow_v1').
             project_name: Alias for project_id.
@@ -62,7 +64,7 @@ def register_file_crud_tools(ctx: ToolContext) -> None:
     ctx.register_alias(
         read_project_file,
         "read_file",
-        "Alias for read_project_file. Read full or partial text content of a project file.",
+        "Alias for read_project_file. Read full or partial text content of a project file. For large files, specify start_line and end_line (e.g. start_line=1, end_line=500) to inspect safely in bounded windows.",
     )
 
     @ctx.register_tool()
@@ -145,6 +147,8 @@ def register_file_crud_tools(ctx: ToolContext) -> None:
         path: str = "",
     ) -> dict[str, Any]:
         """Get metadata about a file or directory in a configured project (size, modified time, line count).
+
+        For text files of any size, accurate line_count is calculated to assist planning start_line/end_line pagination.
 
         Args:
             project_id: The ID/name of the configured project.

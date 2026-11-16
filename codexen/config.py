@@ -91,7 +91,7 @@ class ProjectConfig:
 @dataclass
 class ServiceSettings:
     """Global service settings and permissions."""
-    max_read_chars: int = 1_000_000
+    max_read_chars: int = 100_000
     max_list_entries: int = 1_000
     max_search_results: int = 200
     max_zip_size_bytes: int = 100 * 1024 * 1024  # 100MB
@@ -266,7 +266,7 @@ class ConfigManager:
         merged_settings = {**raw_settings, **raw_mcp_perm, **raw_perm}
 
         self.settings = ServiceSettings(
-            max_read_chars=int(merged_settings.get("max_read_chars", 1_000_000)),
+            max_read_chars=int(merged_settings.get("max_read_chars", 100_000)),
             max_list_entries=int(merged_settings.get("max_list_entries", 1_000)),
             max_search_results=int(merged_settings.get("max_search_results", 200)),
             max_zip_size_bytes=int(merged_settings.get("max_zip_size_bytes", 100 * 1024 * 1024)),

@@ -22,6 +22,8 @@ def register_batch_tools(ctx: ToolContext) -> None:
     ) -> dict[str, Any]:
         """Read contents of multiple files within a project in a single batch call.
 
+        NOTICE: Intended for small to medium files. If a file exceeds max_read_chars, an actionable error will be reported in the errors dictionary advising the use of read_file with start_line and end_line.
+
         Args:
             project_id: The ID/name of the configured project.
             project_name: Alias for project_id.

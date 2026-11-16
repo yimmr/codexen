@@ -16,6 +16,7 @@ from .command import (
 )
 from .fs import (
     copy_project_path,
+    count_file_lines_stream,
     create_project_directory,
     delete_project_file,
     edit_project_file_snippet,
@@ -80,6 +81,7 @@ __all__ = [
     "utc_iso_now",
     "matches_any_pattern",
     "is_binary_file",
+    "count_file_lines_stream",
     "list_project_files",
     "read_project_file",
     "read_multiple_project_files",

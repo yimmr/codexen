@@ -57,6 +57,22 @@ def is_binary_file(path: Path) -> bool:
         return False
 
 
+def count_file_lines_stream(file_path: Path) -> int:
+    """Accurately count lines in a file in O(1) memory via chunked binary stream."""
+    count = 0
+    last_byte = b""
+    try:
+        with open(file_path, "rb") as f:
+            while chunk := f.read(65536):
+                count += chunk.count(b"\n")
+                last_byte = chunk[-1:]
+        if last_byte and last_byte != b"\n":
+            count += 1
+        return count
+    except Exception:
+        return 0
+
+
 def list_project_files(
     project: ProjectConfig,
     subpath: str = "",
@@ -268,7 +284,7 @@ def read_project_file(
     project: ProjectConfig,
     relative_path: str,
     encoding: str = "utf-8",
-    max_chars: int = 1_000_000,
+    max_chars: int = 100_000,
     offset: int = 0,
     limit: int = 0,
     start_line: int = 0,
@@ -294,11 +310,6 @@ def read_project_file(
     except OSError as e:
         raise FileServiceError(f"Failed to inspect file '{relative_path}': {e}") from e
 
-    if limit == 0 and end_line == 0 and file_size > max_chars * 4 and not auto_paginate:
-        raise FileSizeLimitError(
-            f"File '{relative_path}' ({file_size} bytes) exceeds safety limit (max {max_chars} chars)."
-        )
-
     # 1. Line-based streaming slice takes precedence if specified (O(1) RAM)
     if start_line > 0 or end_line > 0:
         start_idx = max(0, start_line - 1)
@@ -309,45 +320,38 @@ def read_project_file(
         cur_chars = 0
         hit_char_limit = False
         fit_count = 0
-        total_lines = 0
 
         try:
             with open(file_path, encoding=encoding, errors="replace") as f:
                 for line in f:
                     cur_line_no += 1
-                    total_lines += 1
                     if cur_line_no <= start_idx:
                         prior_chars += len(line)
                         continue
                     if end_idx > 0 and cur_line_no > end_idx:
-                        for _ in f:
-                            total_lines += 1
                         break
 
                     if cur_chars + len(line) > max_chars and len(slice_lines) > 0:
                         hit_char_limit = True
-                        if auto_paginate:
-                            for _ in f:
-                                total_lines += 1
-                            break
-                        else:
-                            raise FileSizeLimitError(
-                                f"Selected lines in '{relative_path}' exceed max allowed limit of {max_chars} characters."
-                            )
+                        break
 
                     slice_lines.append(line)
                     cur_chars += len(line)
                     fit_count += 1
-        except FileSizeLimitError:
-            raise
         except Exception as e_err:
             raise FileServiceError(f"Failed to read file '{relative_path}' with encoding '{encoding}': {e_err}") from e_err
 
-        if (hit_char_limit or cur_chars > max_chars) and auto_paginate:
+        if hit_char_limit or cur_chars > max_chars:
+            if not auto_paginate:
+                raise FileSizeLimitError(
+                    f"Selected lines in '{relative_path}' exceed max allowed limit of {max_chars} characters. "
+                    f"Tip: Specify a narrower line window (e.g. 500 lines) or enable auto_paginate."
+                )
             fit_count = max(1, fit_count)
             returned_end = start_idx + fit_count
             chunk_size = fit_count
             next_start = returned_end + 1
+            total_lines = count_file_lines_stream(file_path)
             next_end = min(total_lines, returned_end + chunk_size)
             return {
                 "status": "success",
@@ -363,39 +367,46 @@ def read_project_file(
                 "returned_chars": cur_chars,
                 "next_start_line": next_start,
                 "next_offset": prior_chars + cur_chars,
-                "hint": f"File truncated due to size limit. Call read_file(project_id='{project.name}', relative_path='{relative_path}', start_line={next_start}, end_line={next_end}) to read the next segment.",
+                "hint": (
+                    f"File truncated due to size limit. "
+                    f"Call read_file(project_id='{project.name}', relative_path='{relative_path}', start_line={next_start}, end_line={next_end}) to read the next segment. "
+                    f"Tip: For large files, use bounded windows (e.g. 500 lines) to avoid context overflow."
+                ),
             }
 
         return "".join(slice_lines)
 
-    try:
-        content = file_path.read_text(encoding=encoding, errors="replace")
-    except Exception as e:
-        raise FileServiceError(f"Failed to read file '{relative_path}' with encoding '{encoding}': {e}") from e
-
-    lines = content.splitlines(keepends=True)
-    total_lines = len(lines)
-
-    # Character offset / limit slicing
+    # 2. Character offset / limit slicing
     if offset > 0 or limit > 0:
+        try:
+            content = file_path.read_text(encoding=encoding, errors="replace")
+        except Exception as e:
+            raise FileServiceError(f"Failed to read file '{relative_path}' with encoding '{encoding}': {e}") from e
         end = offset + limit if limit > 0 else len(content)
         return content[offset:end]
 
-    # Full file read
-    if len(content) > max_chars:
+    # 3. Full file read or auto-paginate
+    if file_size > max_chars:
         if not auto_paginate:
             raise FileSizeLimitError(
-                f"File '{relative_path}' has {len(content)} characters, exceeding the max allowed limit of {max_chars} characters."
+                f"File '{relative_path}' ({file_size} bytes) exceeds the max allowed limit of {max_chars} characters. "
+                f"Tip: Use 'read_file' with 'start_line' and 'end_line' (e.g. start_line=1, end_line=500) to inspect line ranges safely."
             )
-        # Self-healing pagination on full file
+        # Self-healing pagination on full file (streamed to avoid high RAM usage)
         cur_chars = 0
-        fit_count = 0
-        for line_str in lines:
-            if cur_chars + len(line_str) > max_chars and fit_count > 0:
-                break
-            cur_chars += len(line_str)
-            fit_count += 1
-        fit_count = max(1, fit_count)
+        slice_lines = []
+        try:
+            with open(file_path, encoding=encoding, errors="replace") as f:
+                for line in f:
+                    if cur_chars + len(line) > max_chars and len(slice_lines) > 0:
+                        break
+                    cur_chars += len(line)
+                    slice_lines.append(line)
+        except Exception as e:
+            raise FileServiceError(f"Failed to read file '{relative_path}' with encoding '{encoding}': {e}") from e
+
+        fit_count = max(1, len(slice_lines))
+        total_lines = count_file_lines_stream(file_path)
         chunk_size = fit_count
         next_start = fit_count + 1
         next_end = min(total_lines, fit_count + chunk_size)
@@ -404,7 +415,7 @@ def read_project_file(
             "project": project.name,
             "relative_path": relative_path,
             "encoding": encoding,
-            "content": "".join(lines[:fit_count]),
+            "content": "".join(slice_lines),
             "truncated": True,
             "truncation_reason": "max_read_chars_limit_reached",
             "total_file_lines": total_lines,
@@ -413,8 +424,17 @@ def read_project_file(
             "returned_chars": cur_chars,
             "next_start_line": next_start,
             "next_offset": cur_chars,
-            "hint": f"File truncated due to size limit. Call read_file(project_id='{project.name}', relative_path='{relative_path}', start_line={next_start}, end_line={next_end}) to read the next segment.",
+            "hint": (
+                f"File truncated due to size limit. "
+                f"Call read_file(project_id='{project.name}', relative_path='{relative_path}', start_line={next_start}, end_line={next_end}) to read the next segment. "
+                f"Tip: For large files, specify start_line and end_line (e.g. start_line=1, end_line=500) to inspect in bounded windows."
+            ),
         }
+
+    try:
+        content = file_path.read_text(encoding=encoding, errors="replace")
+    except Exception as e:
+        raise FileServiceError(f"Failed to read file '{relative_path}' with encoding '{encoding}': {e}") from e
 
     return content
 
@@ -535,9 +555,8 @@ def get_project_file_info(project: ProjectConfig, relative_path: str) -> dict[st
 
     if target.is_file():
         try:
-            if stat.st_size <= 2_000_000:
-                lines = target.read_text(encoding="utf-8", errors="replace").splitlines()
-                info["line_count"] = len(lines)
+            if not is_binary_file(target):
+                info["line_count"] = count_file_lines_stream(target)
         except Exception:
             pass
 
@@ -692,7 +711,7 @@ def read_multiple_project_files(
     project: ProjectConfig,
     relative_paths: list[str],
     encoding: str = "utf-8",
-    max_chars_per_file: int = 1_000_000,
+    max_chars_per_file: int = 100_000,
 ) -> dict[str, Any]:
     """Read contents of multiple files in a single batch operation."""
     ensure_project_accessible(project)
@@ -711,6 +730,11 @@ def read_multiple_project_files(
             )
             results[clean_rel] = content
             total_chars += len(content) if isinstance(content, str) else len(str(content.get("content", "")))
+        except FileSizeLimitError as e:
+            errors[clean_rel] = (
+                f"{e} File is too large for batch reading. "
+                f"Please inspect targeted segments using read_file with start_line and end_line."
+            )
         except Exception as e:
             errors[clean_rel] = str(e)
 

@@ -44,7 +44,7 @@ permissions:
   allow_copy_path: true       # 允许项目内与跨项目文件/目录复制
   allow_zip_operations: true  # 允许 ZIP 打包与解压
   allow_command_execution: true # 允许受控终端命令执行
-  max_read_chars: 1000000     # 单次读文件最大字符限制 (防大文件内存溢出)
+  max_read_chars: 100000      # 单次读文件最大字符限制 (防大文件内存溢出与 Token 爆炸)
   max_list_entries: 1000      # 遍历目录最大条目数
   max_search_results: 200     # 代码检索单次最多返回匹配数
   max_zip_size_bytes: 104857600 # 最大允许解压/打包 ZIP 大小 (100MB)
