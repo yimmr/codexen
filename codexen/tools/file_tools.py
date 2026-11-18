@@ -119,6 +119,7 @@ def register_file_crud_tools(ctx: ToolContext) -> None:
         overwrite: bool = True,
         append: bool = False,
         encoding: str = "utf-8",
+        newline_mode: str = "auto",
     ) -> dict[str, Any]:
         """Write text content to a project file. Automatically creates parent directories.
 
@@ -141,6 +142,7 @@ def register_file_crud_tools(ctx: ToolContext) -> None:
             overwrite=overwrite,
             append=append,
             encoding=encoding or ctx.config_mgr.settings.default_encoding,
+            newline_mode=newline_mode,
         )
 
     ctx.register_alias(
@@ -159,6 +161,7 @@ def register_file_crud_tools(ctx: ToolContext) -> None:
         replace_text: str = "",
         replace_all: bool = False,
         include_hunk: bool = False,
+        newline_mode: str = "auto",
     ) -> dict[str, Any]:
         """Replace a specific text snippet in an existing project file without rewriting the entire file.
 
@@ -185,6 +188,7 @@ def register_file_crud_tools(ctx: ToolContext) -> None:
             replace_all=replace_all,
             encoding=ctx.config_mgr.settings.default_encoding,
             include_hunk=include_hunk,
+            newline_mode=newline_mode,
         )
 
     @ctx.register_tool()

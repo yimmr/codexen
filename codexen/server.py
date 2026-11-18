@@ -5,6 +5,7 @@ Lifecycle execution is delegated to the generic mcp_server_core.
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, cast
 
@@ -31,9 +32,13 @@ from starlette.applications import Starlette
 
 from .config import ConfigManager
 from .exceptions import FileServiceError
+from .logging_filters import ExpectedFailureFilter
 from .tools import register_file_tools
 
 ROOT = Path(__file__).resolve().parents[1]
+_error_logger = logging.getLogger("mcp.error")
+if not any(isinstance(item, ExpectedFailureFilter) for item in _error_logger.filters):
+    _error_logger.addFilter(ExpectedFailureFilter())
 load_dotenv(ROOT / ".env")
 
 

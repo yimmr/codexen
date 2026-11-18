@@ -9,7 +9,7 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from ..config import ProjectConfig
 from ..exceptions import (
@@ -18,14 +18,25 @@ from ..exceptions import (
     PathSecurityError,
     PermissionDeniedError,
     ReadOnlyProjectError,
+    SnippetAmbiguousError,
+    SnippetNotFoundError,
+    UnsupportedNewlineModeError,
 )
+from .edit_diagnostics import diagnostic_summary, safe_diagnose_edit
 from .gitignore import get_project_ignore_manager, is_path_authorized, log_penetration_audit
+from .newline_policy import (
+    NewlineStyle,
+    convert_newline_text,
+    profile_newlines,
+    validate_newline_encoding,
+)
 from .security import (
     assert_not_sensitive_path,
     ensure_project_accessible,
     normalize_relative_path,
     safe_resolve_path,
 )
+from .stream_matcher import replace_streaming_auto
 
 
 def utc_iso_now() -> str:
@@ -449,6 +460,7 @@ def write_project_file(
     overwrite: bool = True,
     append: bool = False,
     encoding: str = "utf-8",
+    newline_mode: str = "auto",
 ) -> dict[str, Any]:
     """Write or append text content to a project file, creating parent directories if needed."""
     if project.read_only:
@@ -473,12 +485,65 @@ def write_project_file(
 
     file_path.parent.mkdir(parents=True, exist_ok=True)
 
+    if newline_mode not in ("auto", "raw"):
+        raise UnsupportedNewlineModeError("newline_mode must be 'auto' or 'raw'")
+    if newline_mode == "auto":
+        validate_newline_encoding(encoding)
+    newline_style: str | None = None
+    if newline_mode == "auto" and file_path.exists() and file_path.stat().st_size:
+        try:
+            with open(file_path, encoding=encoding, errors="strict", newline="") as existing:
+                sample = existing.read(1_048_576)
+                if append:
+                    # Inspect the complete stream in bounded memory: the last
+                    # confirmed newline, rather than the prefix, controls append.
+                    tail = sample[-1:]
+                    last_style = profile_newlines(sample).last_style
+                    while chunk := existing.read(1_048_576):
+                        part = profile_newlines(tail + chunk)
+                        last_style = part.last_style or last_style
+                        tail = chunk[-1:]
+                    if last_style is not None:
+                        sample = "\r\n" if last_style == "crlf" else "\n"
+            profile = profile_newlines(sample)
+            newline_style = profile.last_style if append else profile.dominant_style
+            newline_style = newline_style or profile.first_style
+        except (OSError, UnicodeError) as e:
+            raise FileServiceError(f"Failed to inspect existing file '{relative_path}': {e}") from e
+    newline_style = newline_style or profile_newlines(content).first_style
+    body = convert_newline_text(content, cast(NewlineStyle | None, newline_style)) if newline_mode == "auto" else content
     try:
         if append:
-            with open(file_path, "a", encoding=encoding) as f:
-                f.write(content)
+            fd, temp_name = tempfile.mkstemp(prefix=".codexen_write_", suffix=".tmp", dir=file_path.parent)
+            temp_path = Path(temp_name)
+            try:
+                with os.fdopen(fd, "wb") as output:
+                    if file_path.exists():
+                        with file_path.open("rb") as source:
+                            shutil.copyfileobj(source, output, length=1_048_576)
+                    append_encoding = encoding
+                    if file_path.exists() and file_path.stat().st_size and encoding.lower().replace("_", "-") == "utf-8-sig":
+                        append_encoding = "utf-8"
+                    output.write(body.encode(append_encoding))
+                if file_path.exists():
+                    shutil.copymode(file_path, temp_path)
+                _atomic_replace_with_retry(temp_path, file_path)
+            finally:
+                temp_path.unlink(missing_ok=True)
         else:
-            file_path.write_text(content, encoding=encoding)
+            fd, temp_name = tempfile.mkstemp(prefix=".codexen_write_", suffix=".tmp", dir=file_path.parent)
+            temp_path = Path(temp_name)
+            try:
+                with os.fdopen(fd, "w", encoding=encoding, errors="strict", newline="") as f:
+                    f.write(body)
+                if file_path.exists():
+                    shutil.copymode(file_path, temp_path)
+                _atomic_replace_with_retry(temp_path, file_path)
+            finally:
+                try:
+                    temp_path.unlink()
+                except FileNotFoundError:
+                    pass
     except Exception as e:
         raise FileServiceError(f"Failed to write file '{relative_path}': {e}") from e
 
@@ -492,6 +557,7 @@ def write_project_file(
         "relative_path": rel,
         "size_bytes": stat.st_size,
         "chars_written": len(content),
+        "newline_style_used": newline_style,
         "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
     }
 
@@ -701,6 +767,11 @@ def _replace_snippet_streaming(
                             first_before_context = tail_context
                     written = idx + match_len
                     first_replaced = True
+                else:
+                    # Consume counted matches even when only the first is
+                    # replaced, so overlap carry cannot count them again.
+                    _copy(buf[written:idx + match_len])
+                    written = idx + match_len
                 count += 1
                 pos = idx + match_len
 
@@ -733,6 +804,7 @@ def edit_project_file_snippet(
     encoding: str = "utf-8",
     chunk_chars: int = EDIT_CHUNK_CHARS,
     include_hunk: bool = False,
+    newline_mode: str = "auto",
 ) -> dict[str, Any]:
     """Replace an exact substring snippet in a project file of any size.
 
@@ -740,6 +812,8 @@ def edit_project_file_snippet(
     so a failed or ambiguous edit never leaves a partially edited file behind. There is
     no read-size gate: arbitrarily large text files are edited with bounded memory.
     """
+    if newline_mode not in ("auto", "raw"):
+        raise UnsupportedNewlineModeError("newline_mode must be 'auto' or 'raw'")
     if project.read_only:
         raise ReadOnlyProjectError(
             f"Project '{project.name}' is configured as read-only. Edit operation is rejected."
@@ -782,24 +856,24 @@ def edit_project_file_snippet(
             os.close(tmp_fd)
             raise
         with dst_handle as dst:
-            occurrences, changed_lines, hunk, hunk_omitted = _replace_snippet_streaming(
-                src_path=file_path,
-                dst=dst,
-                search_text=search_text,
-                replace_text=replace_text,
-                replace_all=replace_all,
-                encoding=encoding,
-                chunk_chars=max(1, chunk_chars),
-                include_hunk=include_hunk,
-            )
+            if newline_mode == "auto":
+                scan = replace_streaming_auto(file_path, dst, search_text, replace_text, replace_all, encoding, chunk_chars, include_hunk)
+                occurrences = scan["occurrences"]
+                changed_lines, hunk, hunk_omitted = scan["changed_lines"], scan["hunk"], scan["hunk_omitted_reason"]
+            else:
+                occurrences, changed_lines, hunk, hunk_omitted = _replace_snippet_streaming(file_path, dst, search_text, replace_text, replace_all, encoding, max(1, chunk_chars), include_hunk)
 
         if occurrences == 0:
-            raise FileServiceError(
-                f"search_text not found in file '{relative_path}'. Edit aborted."
+            diagnostic = safe_diagnose_edit(file_path, search_text)
+            raise SnippetNotFoundError(
+                f"search_text not found in file '{relative_path}'. Edit aborted. "
+                f"{diagnostic_summary(diagnostic)}"
             )
         if occurrences > 1 and not replace_all:
-            raise FileServiceError(
-                f"search_text occurs {occurrences} times in '{relative_path}'. Specify replace_all=True or provide more unique context."
+            diagnostic = safe_diagnose_edit(file_path, search_text)
+            raise SnippetAmbiguousError(
+                f"search_text occurs {occurrences} times in '{relative_path}'. Specify replace_all=True or provide more unique context. "
+                f"{diagnostic_summary(diagnostic)}"
             )
 
         try:

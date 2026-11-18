@@ -5,6 +5,7 @@ import asyncio
 import json
 import tempfile
 import unittest
+import inspect
 from pathlib import Path
 import yaml
 
@@ -96,6 +97,11 @@ class MCPCompletenessTests(unittest.TestCase):
         # Unregistered folders in workspace root must NOT be listed
         self.assertNotIn("gamma_unmapped", project_ids)
         self.assertEqual(len(projects), 2)
+
+    def test_newline_mode_is_exposed_on_core_tools_and_alias(self):
+        for name in ("write_project_file", "write_file", "edit_file_snippet"):
+            self.assertIn("newline_mode", inspect.signature(self.tools[name]).parameters)
+            self.assertEqual(inspect.signature(self.tools[name]).parameters["newline_mode"].default, "auto")
 
         # Unregistered project access must be rejected with ConfigurationError
         with self.assertRaises(ConfigurationError):

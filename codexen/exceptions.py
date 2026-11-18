@@ -7,6 +7,26 @@ class FileServiceError(Exception):
     pass
 
 
+class ExpectedToolFailure(FileServiceError):
+    """A user-correctable tool input failure."""
+
+
+class SnippetNotFoundError(ExpectedToolFailure):
+    pass
+
+
+class SnippetAmbiguousError(ExpectedToolFailure):
+    pass
+
+
+class UnsupportedNewlineModeError(ExpectedToolFailure):
+    pass
+
+
+class UnsupportedNewlineEncodingError(ExpectedToolFailure):
+    pass
+
+
 class ProjectNotFoundError(FileServiceError):
     """Raised when a specified project cannot be found in configuration."""
     pass
